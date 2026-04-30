@@ -538,6 +538,7 @@ var dict = {
     promptProjectName: "New name:", confirmDeleteProject: "Delete project '{name}'? All its expenses will be removed too.",
     noProjectTitle: "No project assigned", noProjectMsg: "Ask an admin to assign you to a project before you can add expenses.",
     dbOnline: "Online", dbOffline: "Offline",
+    syncSuffix: "syncing", queuedSuffix: "queued",
     receiptUploading: "Uploading receipt...", receiptFailed: "Could not upload receipt",
     receiptOpen: "Open receipt", receiptNone: "—", receiptThumbAlt: "Receipt"
   },
@@ -603,6 +604,7 @@ var dict = {
     promptProjectName: "Nouveau nom :", confirmDeleteProject: "Supprimer le projet « {name} » ? Toutes ses dépenses seront aussi supprimées.",
     noProjectTitle: "Aucun projet affecté", noProjectMsg: "Demandez à un admin de vous affecter à un projet avant d'ajouter des dépenses.",
     dbOnline: "En ligne", dbOffline: "Hors ligne",
+    syncSuffix: "synchronisation", queuedSuffix: "en attente",
     receiptUploading: "Envoi du reçu...", receiptFailed: "Impossible d'envoyer le reçu",
     receiptOpen: "Voir le reçu", receiptNone: "—", receiptThumbAlt: "Reçu"
   }
@@ -958,15 +960,24 @@ function updateUserUI() {
     adminBtn.classList.add('hidden');
   }
 }
-function setStorageMode(online) {
-  // Frontend has no localStorage fallback in Tier 3 — Supabase or nothing.
-  // We just reflect connectivity in the indicator.
+async function setStorageMode(online) {
   var dot = document.querySelector('#dbIndicator .status-dot');
   var lbl = document.getElementById('dbLabel');
   var btn = document.getElementById('dbIndicator');
-  if (online) { dot.className = 'status-dot dot-server'; lbl.textContent = t('dbOnline'); btn.className = 'btn-db db-server'; }
-  else { dot.className = 'status-dot dot-local'; lbl.textContent = t('dbOffline'); btn.className = 'btn-db db-local'; }
+  var pendingCount = 0;
+  try { pendingCount = (await idbListOps()).length; } catch (e) {}
+  if (online) {
+    dot.className = 'status-dot dot-server';
+    lbl.textContent = pendingCount > 0 ? (t('dbOnline') + ' (' + pendingCount + ' ' + t('syncSuffix') + ')') : t('dbOnline');
+    btn.className = 'btn-db db-server';
+  } else {
+    dot.className = 'status-dot dot-local';
+    lbl.textContent = pendingCount > 0 ? (t('dbOffline') + ' (' + pendingCount + ' ' + t('queuedSuffix') + ')') : t('dbOffline');
+    btn.className = 'btn-db db-local';
+  }
 }
+
+function renderSyncCounter() { setStorageMode(navigator.onLine !== false && !!currentUser); }
 function updateDbIndicator() { setStorageMode(!!currentUser); }
 function updateNoProjectBanner() {
   var banner = document.getElementById('noProjectBanner');
@@ -1138,6 +1149,7 @@ async function replayQueue() {
       try {
         await replayOne(op);
         await idbDeleteOp(op.id);
+        renderSyncCounter();
       } catch (err) {
         if (isNetworkError(err)) {
           // Stop the drain; will retry on next reconnect
@@ -1248,7 +1260,8 @@ async function discardPendingOp(clientId) {
 window.discardPendingOp = discardPendingOp;
 
 /* ─────────── Reconnect triggers ─────────── */
-window.addEventListener('online', function() { replayQueue(); });
+window.addEventListener('online', function() { renderSyncCounter(); replayQueue(); });
+window.addEventListener('offline', function() { renderSyncCounter(); });
 window.addEventListener('focus', function() { replayQueue(); });
 window.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') replayQueue(); });
 
@@ -1464,6 +1477,20 @@ function getFiltered() {
     });
 }
 
+window.computeOfflineSpentDelta = function() {
+  // Sums the user's own offline-pending insert amounts (for the current project).
+  // UPDATEs/DELETEs are reflected via _pending/_rejected flags on the local row,
+  // not via this delta — so we only count optimistic INSERT rows.
+  var delta = 0;
+  if (!currentUser || !currentUser.project_id) return 0;
+  expenses.forEach(function(e) {
+    if (e._pending && !e._rejected && e.project_id === currentUser.project_id && typeof e.id === 'string' && e.id.indexOf('__local_') === 0) {
+      delta += Number(e.amount || 0);
+    }
+  });
+  return delta;
+};
+
 function computeBudgetCardState() {
   // Returns { visible, spent, budget, alertPct, color, isStale } or { visible: false }.
   if (!currentUser) return { visible: false };
@@ -1560,6 +1587,7 @@ function render() {
         '<button class="icon-btn danger" onclick="deleteExpense(\'' + escAttr(e.id) + '\')" title="' + dt + '">✕</button>' +
       '</div></td></tr>';
   }).join('');
+  renderSyncCounter();
 }
 window.render = render;
 
