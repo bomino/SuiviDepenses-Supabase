@@ -71,6 +71,16 @@
   .accent-red   .icon-circle { background: var(--red-bg);   color: var(--red); }   .accent-red   .value { color: var(--red); }
   .accent-amber .icon-circle { background: var(--amber-bg); color: var(--amber); } .accent-amber .value { color: var(--amber); }
   .accent-blue  .icon-circle { background: rgba(59,130,246,.15); color: var(--blue); } .accent-blue .value { color: var(--blue); }
+  .accent-budget .icon-circle { background: rgba(245,158,11,.12); color: var(--accent); }
+  .accent-budget .value { color: var(--accent); font-size: 1.05rem; }
+  .accent-budget .value .of { color: var(--sub); font-weight: 500; }
+  .budget-bar { width: 100%; height: 8px; background: var(--surface2); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+  .budget-bar > span { display: block; height: 100%; transition: width .35s ease; border-radius: 4px; }
+  .budget-bar.green > span { background: var(--green); }
+  .budget-bar.amber > span { background: var(--amber); }
+  .budget-bar.red   > span { background: var(--red); }
+  .stat-card.stale { border-style: dashed; }
+  .stat-card.stale #budgetCardLabel::after { content: " ~"; color: var(--sub); }
 
   .section { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; }
   .section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 18px; color: var(--text); display: flex; align-items: center; gap: 8px; }
@@ -257,6 +267,15 @@
       <div class="icon-circle">&#8987;</div>
       <div class="label" id="statPendingLabel">Pending</div>
       <div class="value" id="statPending">0</div>
+    </div>
+    <div class="stat-card accent-budget" id="budgetCard" style="display:none">
+      <div class="icon-circle">B</div>
+      <div class="label" id="budgetCardLabel">Budget</div>
+      <div class="value">
+        <span id="budgetSpent">0</span><span class="of"> / </span><span id="budgetTotal">0</span>
+      </div>
+      <div class="budget-bar green" id="budgetBar"><span style="width:0%"></span></div>
+      <div class="label" style="margin-top:6px;font-size:.65rem;display:none" id="budgetOverLabel">Over budget</div>
     </div>
   </div>
 
@@ -456,6 +475,13 @@ var dict = {
   en: {
     headerTitle: "Expense Tracker",
     statTotalLabel: "Total", statPaidLabel: "Paid", statUnpaidLabel: "Unpaid", statPendingLabel: "Pending",
+    budgetCardLabel: "Budget",
+    budgetOverLabel: "Over budget",
+    adminBudgetInput: "Budget",
+    adminAlertPct: "Alert at %",
+    adminBudgetSave: "Save",
+    adminBudgetSaved: "Budget saved",
+    budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
     lblPaidBy: "Paid By", lblStatus: "Status", lblNotes: "Notes", lblReceipt: "Receipt photo",
@@ -510,6 +536,13 @@ var dict = {
   fr: {
     headerTitle: "Suivi des Dépenses",
     statTotalLabel: "Total", statPaidLabel: "Payé", statUnpaidLabel: "Impayé", statPendingLabel: "Attente",
+    budgetCardLabel: "Budget",
+    budgetOverLabel: "Dépassement",
+    adminBudgetInput: "Budget",
+    adminAlertPct: "Alerte à %",
+    adminBudgetSave: "Enregistrer",
+    adminBudgetSaved: "Budget enregistré",
+    budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
     lblPaidBy: "Payé par", lblStatus: "État", lblNotes: "Remarques", lblReceipt: "Photo du reçu",
@@ -583,6 +616,8 @@ function applyLang() {
   setText('statPaidLabel', d.statPaidLabel);
   setText('statUnpaidLabel', d.statUnpaidLabel);
   setText('statPendingLabel', d.statPendingLabel);
+  document.getElementById('budgetCardLabel').textContent = d.budgetCardLabel;
+  document.getElementById('budgetOverLabel').textContent = d.budgetOverLabel;
 
   var ft = document.getElementById('formTitle');
   if (ft) ft.textContent = (document.getElementById('editId').value) ? d.formTitleEdit : d.formTitleAdd;
@@ -1097,7 +1132,54 @@ function getFiltered() {
     });
 }
 
+function computeBudgetCardState() {
+  // Returns { visible, spent, budget, alertPct, color, isStale } or { visible: false }.
+  if (!currentUser) return { visible: false };
+
+  if (currentUser.is_admin) {
+    // Admin viewing all projects: sum across non-null-budget projects.
+    var withBudgets = projectSummary.filter(function(s){ return s.budget_amount; });
+    if (withBudgets.length === 0) return { visible: false };
+    var spent  = withBudgets.reduce(function(a,s){ return a + Number(s.spent || 0); }, 0);
+    var budget = withBudgets.reduce(function(a,s){ return a + Number(s.budget_amount || 0); }, 0);
+    var alertPct = 80;
+    return finishBudgetState(spent, budget, alertPct, false);
+  }
+
+  // Supervisor: their own project.
+  var row = projectSummary.find(function(s){ return s.project_id === currentUser.project_id; });
+  if (!row || !row.budget_amount) return { visible: false };
+
+  // Adjust for the user's own offline pending ops (Phase 2 will populate this).
+  var offlineDelta = (window.computeOfflineSpentDelta && window.computeOfflineSpentDelta()) || 0;
+  var spent = Number(row.spent || 0) + offlineDelta;
+  return finishBudgetState(spent, Number(row.budget_amount), Number(row.budget_alert_pct || 80), offlineDelta !== 0);
+}
+
+function finishBudgetState(spent, budget, alertPct, isStale) {
+  var ratio = budget > 0 ? (spent / budget) : 0;
+  var color = (ratio >= 1.0) ? 'red' : (ratio >= alertPct/100) ? 'amber' : 'green';
+  return { visible: true, spent: spent, budget: budget, alertPct: alertPct, color: color, isStale: isStale, ratio: ratio };
+}
+
+function renderBudgetCard() {
+  var card = document.getElementById('budgetCard');
+  var state = computeBudgetCardState();
+  if (!state.visible) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('budgetSpent').textContent = fmtAmount(state.spent);
+  document.getElementById('budgetTotal').textContent = fmtAmount(state.budget);
+  var bar = document.getElementById('budgetBar');
+  bar.className = 'budget-bar ' + state.color;
+  var pct = Math.min(100, Math.round(state.ratio * 100));
+  bar.firstElementChild.style.width = pct + '%';
+  document.getElementById('budgetOverLabel').style.display = state.color === 'red' ? '' : 'none';
+  card.classList.toggle('stale', !!state.isStale);
+  card.title = state.isStale ? t('budgetStaleTooltip') : '';
+}
+
 function render() {
+  renderBudgetCard();
   var filtered = getFiltered();
   var total = expenses.reduce(function(s, e){ return s + Number(e.amount || 0); }, 0);
   var paid    = expenses.filter(function(e){return e.status==='Paid';}   ).reduce(function(s,e){return s+Number(e.amount||0);},0);
