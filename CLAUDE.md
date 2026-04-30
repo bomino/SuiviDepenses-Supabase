@@ -50,7 +50,14 @@ Authorization model used by RLS: **admin sees/mutates everything; supervisor onl
 
 Admin-only mutations (promote/demote a user, assign a user to a project) are implemented as `SECURITY DEFINER` functions in `_admin_helpers.sql` and called via `supabase.rpc('set_user_admin', ...)` / `supabase.rpc('assign_user_project', ...)`. The functions check `is_admin(auth.uid())` themselves. Don't try to replicate these by direct UPDATEs on `profiles` from the client — RLS will (correctly) reject them.
 
-**Inviting new users** is the one operation that *cannot* be done via a Postgres function — `auth.admin.inviteUserByEmail()` is part of the GoTrue HTTPS API and requires the service-role key. So `supabase/functions/invite-user/index.ts` is the project's only Edge Function: it verifies the caller is admin (via their JWT + the `profiles.is_admin` flag) and only then uses the auto-provided `SUPABASE_SERVICE_ROLE_KEY` env var to send the invite. The service-role key never touches the browser. The frontend calls it via `supabase.functions.invoke('invite-user', { body: { email } })`. If you ever need to add another admin operation that requires service-role privilege, follow this same pattern (verify JWT, check admin in `profiles`, then use service-role) — don't put service-role anywhere else.
+**User-management operations that need service-role privilege live in Edge Functions** because the GoTrue admin API (invite, delete, etc.) is HTTPS-only — Postgres functions can't reach it. There are currently two:
+
+- `supabase/functions/invite-user/index.ts` — sends a magic-link invite via `/auth/v1/invite`.
+- `supabase/functions/delete-user/index.ts` — best-effort cleanup of the target's storage objects under `receipts/<user_id>/`, then `DELETE /auth/v1/admin/users/<id>`. The cascade FKs on `profiles.id → auth.users(id)` and `expenses.user_id → auth.users(id)` handle the DB rows; storage isn't FK-tied so the function lists+deletes manually.
+
+Both follow the same skeleton: CORS preflight first, parse JSON body, verify the caller's JWT against `/auth/v1/user`, look up `profiles.is_admin` via PostgREST scoped by the JWT, then perform the admin operation with the service-role key. Frontend calls via `supabase.functions.invoke('<name>', { body: {...} })`. Self-protection (caller can't delete or demote themselves) lives inside the function, not just the UI.
+
+If you add another admin operation that requires service-role, follow this skeleton — don't put service-role anywhere else, and don't refactor the two functions into a shared module until there are at least three (premature DRY).
 
 ### First-admin bootstrap is silent and idempotent
 

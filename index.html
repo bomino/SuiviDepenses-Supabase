@@ -508,6 +508,9 @@ var dict = {
     adminInviteEmailRequired: "Email is required",
     adminPendingTag: "Pending",
     adminPendingTooltip: "Invited but has not signed in yet",
+    confirmDeleteUser: "Delete user {name}? Their expenses and receipts will be permanently removed.",
+    adminUserDeleted: "User deleted",
+    adminDeleteUserFailed: "Could not delete user",
     budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
@@ -584,6 +587,9 @@ var dict = {
     adminInviteEmailRequired: "L'e-mail est requis",
     adminPendingTag: "En attente",
     adminPendingTooltip: "Invité mais ne s'est pas encore connecté",
+    confirmDeleteUser: "Supprimer l'utilisateur {name} ? Ses dépenses et reçus seront définitivement effacés.",
+    adminUserDeleted: "Utilisateur supprimé",
+    adminDeleteUserFailed: "Impossible de supprimer l'utilisateur",
     budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
@@ -1854,6 +1860,7 @@ async function refreshAdminUserList() {
       '<select onchange="adminAssignProject(\'' + escAttr(u.id) + '\', this.value)" title="' + t('adminProjectAssign') + '">' + projectOptions + '</select>' +
       '<div class="actions">' +
         '<button type="button" ' + demoteDisabled + ' onclick="adminToggleAdmin(\'' + escAttr(u.id) + '\',' + (!u.is_admin) + ')">' + toggleLabel + '</button>' +
+        '<button type="button" class="danger" ' + (isMe ? 'disabled' : '') + ' onclick="adminDeleteUser(\'' + escAttr(u.id) + '\',\'' + escAttr(u.email || u.id) + '\')">' + t('adminDelete') + '</button>' +
       '</div></div>';
   }).join('');
 }
@@ -1874,6 +1881,31 @@ async function adminToggleAdmin(uid, makeAdmin) {
   toast(makeAdmin ? t('adminPromoted') : t('adminDemoted'));
 }
 window.adminToggleAdmin = adminToggleAdmin;
+
+async function adminDeleteUser(uid, label) {
+  if (!confirm(t('confirmDeleteUser').replace('{name}', label))) return;
+  setAdminError('');
+  try {
+    var { data, error } = await window.supabase.functions.invoke('delete-user', { body: { user_id: uid } });
+    if (error) {
+      var detail = '';
+      if (error.context && typeof error.context.json === 'function') {
+        try { var b = await error.context.json(); detail = (b && b.error) || ''; } catch (_) {}
+      }
+      setAdminError(detail || error.message || t('adminDeleteUserFailed'));
+      return;
+    }
+    if (data && data.error) { setAdminError(data.error); return; }
+    refreshAdminUserList();
+    // The deleted user's expenses cascade-delete; refresh the local cache too.
+    loadExpenses().then(render);
+    debouncedRefetchSummary();
+    toast(t('adminUserDeleted'));
+  } catch (e) {
+    setAdminError((e && e.message) || t('adminDeleteUserFailed'));
+  }
+}
+window.adminDeleteUser = adminDeleteUser;
 
 async function adminInviteUser(ev) {
   if (ev && ev.preventDefault) ev.preventDefault();
