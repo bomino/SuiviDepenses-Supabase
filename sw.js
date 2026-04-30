@@ -1,4 +1,7 @@
-const CACHE = 'expenses-supabase-v1';
+// CI replaces __VERSION__ with the short Git SHA at deploy time (see
+// .github/workflows/deploy.yml). For local dev (open via http.server etc.)
+// the literal placeholder is fine — still acts as a stable cache key.
+const CACHE = 'expenses-supabase-__VERSION__';
 const ASSETS = [
   './',
   './index.html',

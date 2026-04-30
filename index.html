@@ -71,6 +71,16 @@
   .accent-red   .icon-circle { background: var(--red-bg);   color: var(--red); }   .accent-red   .value { color: var(--red); }
   .accent-amber .icon-circle { background: var(--amber-bg); color: var(--amber); } .accent-amber .value { color: var(--amber); }
   .accent-blue  .icon-circle { background: rgba(59,130,246,.15); color: var(--blue); } .accent-blue .value { color: var(--blue); }
+  .accent-budget .icon-circle { background: rgba(245,158,11,.12); color: var(--accent); }
+  .accent-budget .value { color: var(--accent); font-size: 1.05rem; }
+  .accent-budget .value .of { color: var(--sub); font-weight: 500; }
+  .budget-bar { width: 100%; height: 8px; background: var(--surface2); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+  .budget-bar > span { display: block; height: 100%; transition: width .35s ease; border-radius: 4px; }
+  .budget-bar.green > span { background: var(--green); }
+  .budget-bar.amber > span { background: var(--amber); }
+  .budget-bar.red   > span { background: var(--red); }
+  .stat-card.stale { border-style: dashed; }
+  .stat-card.stale #budgetCardLabel::after { content: " ~"; color: var(--sub); }
 
   .section { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; }
   .section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 18px; color: var(--text); display: flex; align-items: center; gap: 8px; }
@@ -97,6 +107,10 @@
   .badge-paid    { background: var(--green-bg); color: var(--green); }
   .badge-pending { background: var(--amber-bg); color: var(--amber); }
   .badge-unpaid  { background: var(--red-bg);   color: var(--red); }
+  tr.row-pending { opacity: 0.55; }
+  tr.row-pending td { font-style: italic; }
+  tr.row-rejected { background: rgba(239,68,68,.08); }
+  tr.row-rejected td { color: var(--red); }
   .row-actions { display: flex; gap: 6px; }
   .icon-btn { background: transparent; border: 1px solid var(--border); color: var(--sub); width: 30px; height: 30px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; font-family: inherit; }
   .icon-btn:hover { color: var(--text); border-color: var(--text); }
@@ -258,6 +272,15 @@
       <div class="label" id="statPendingLabel">Pending</div>
       <div class="value" id="statPending">0</div>
     </div>
+    <div class="stat-card accent-budget" id="budgetCard" style="display:none">
+      <div class="icon-circle">B</div>
+      <div class="label" id="budgetCardLabel">Budget</div>
+      <div class="value">
+        <span id="budgetSpent">0</span><span class="of"> / </span><span id="budgetTotal">0</span>
+      </div>
+      <div class="budget-bar green" id="budgetBar"><span style="width:0%"></span></div>
+      <div class="label" style="margin-top:6px;font-size:.65rem;display:none" id="budgetOverLabel">Over budget</div>
+    </div>
   </div>
 
   <div class="no-project-banner hidden" id="noProjectBanner">
@@ -334,6 +357,7 @@
             <th id="thStatus">Status</th>
             <th id="thNotes">Notes</th>
             <th id="thReceipt">Receipt</th>
+            <th id="thSync">Sync</th>
             <th></th>
           </tr>
         </thead>
@@ -427,6 +451,9 @@ var realtimeChannel = null;
 var deferredPrompt = null;
 var authMode = 'signin';          /* 'signin' | 'signup' | 'magic' */
 var pendingReceiptFile = null;    /* File chosen in the form, applied on save */
+var projectSummary = [];           /* [{ project_id, name, budget_amount, budget_alert_pct, spent, expense_count }] */
+var projectsChannel = null;        /* second realtime channel */
+var summaryRefetchTimer = null;    /* debounce handle */
 
 /* ─────────── PWA install ─────────── */
 window.addEventListener('beforeinstallprompt', function(e) {
@@ -453,13 +480,21 @@ var dict = {
   en: {
     headerTitle: "Expense Tracker",
     statTotalLabel: "Total", statPaidLabel: "Paid", statUnpaidLabel: "Unpaid", statPendingLabel: "Pending",
+    budgetCardLabel: "Budget",
+    budgetOverLabel: "Over budget",
+    adminBudgetInput: "Budget",
+    adminAlertPct: "Alert at %",
+    adminBudgetSave: "Save",
+    adminBudgetSaved: "Budget saved",
+    adminBudgetInvalid: "Invalid budget",
+    budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
     lblPaidBy: "Paid By", lblStatus: "Status", lblNotes: "Notes", lblReceipt: "Receipt photo",
     saveBtnAdd: "Add", saveBtnUpdate: "Update", cancelBtn: "Cancel",
     allExpensesLabel: "All Expenses", emptyMsg: "No expenses yet. Add one above.",
     thDate: "Date", thDesc: "Description", thCat: "Category", thAmt: "Amount", thPaidBy: "Paid By",
-    thStatus: "Status", thNotes: "Notes", thReceipt: "Receipt",
+    thStatus: "Status", thNotes: "Notes", thReceipt: "Receipt", thSync: "Sync",
     resetBtn: "Reset", clearBtn: "Clear All", exportBtn: "Export",
     catMaterials: "Materials", catLabor: "Labor", catEquipment: "Equipment", catPermits: "Permits",
     catSubs: "Subcontractors", catTransport: "Transport", catUtilities: "Utilities", catMisc: "Misc",
@@ -467,9 +502,11 @@ var dict = {
     filterAllCat: "All Categories", filterAllSt: "All Statuses", filterSearch: "Search...",
     filterFromTitle: "From", filterToTitle: "To",
     toastAdded: "Expense added", toastUpdated: "Expense updated", toastDeleted: "Expense deleted",
+    toastQueued: "Saved offline (will sync)",
     toastCleared: "All expenses cleared", toastNoExport: "Nothing to export", toastCSV: "CSV exported",
     toastRenamed: "Project renamed", toastSaved: "Saved",
     confirmClear: "Delete all visible expenses? This cannot be undone.", confirmDelete: "Delete this expense?",
+    confirmDiscardPending: "Discard this pending change?",
     promptRename: "Project name:", valMsg: "A description and valid amount are required.",
     editTitle: "Edit", deleteTitle: "Delete",
     installMsg: "Install for quick access", installBtn: "Install", dismissBtn: "Dismiss",
@@ -501,19 +538,28 @@ var dict = {
     promptProjectName: "New name:", confirmDeleteProject: "Delete project '{name}'? All its expenses will be removed too.",
     noProjectTitle: "No project assigned", noProjectMsg: "Ask an admin to assign you to a project before you can add expenses.",
     dbOnline: "Online", dbOffline: "Offline",
+    syncSuffix: "syncing", queuedSuffix: "queued",
     receiptUploading: "Uploading receipt...", receiptFailed: "Could not upload receipt",
     receiptOpen: "Open receipt", receiptNone: "—", receiptThumbAlt: "Receipt"
   },
   fr: {
     headerTitle: "Suivi des Dépenses",
     statTotalLabel: "Total", statPaidLabel: "Payé", statUnpaidLabel: "Impayé", statPendingLabel: "Attente",
+    budgetCardLabel: "Budget",
+    budgetOverLabel: "Dépassement",
+    adminBudgetInput: "Budget",
+    adminAlertPct: "Alerte à %",
+    adminBudgetSave: "Enregistrer",
+    adminBudgetSaved: "Budget enregistré",
+    adminBudgetInvalid: "Budget invalide",
+    budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
     lblPaidBy: "Payé par", lblStatus: "État", lblNotes: "Remarques", lblReceipt: "Photo du reçu",
     saveBtnAdd: "Ajouter", saveBtnUpdate: "Mettre à jour", cancelBtn: "Annuler",
     allExpensesLabel: "Toutes les dépenses", emptyMsg: "Aucune dépense. Ajoutez-en une.",
     thDate: "Date", thDesc: "Description", thCat: "Catégorie", thAmt: "Montant", thPaidBy: "Payé par",
-    thStatus: "État", thNotes: "Remarques", thReceipt: "Reçu",
+    thStatus: "État", thNotes: "Remarques", thReceipt: "Reçu", thSync: "Sync",
     resetBtn: "Réinitialiser", clearBtn: "Tout effacer", exportBtn: "Exporter",
     catMaterials: "Matériaux", catLabor: "Main-d’œuvre", catEquipment: "Équipement",
     catPermits: "Permis", catSubs: "Sous-traitants", catTransport: "Transport", catUtilities: "Services", catMisc: "Divers",
@@ -521,9 +567,11 @@ var dict = {
     filterAllCat: "Toutes catégories", filterAllSt: "Tous états", filterSearch: "Rechercher...",
     filterFromTitle: "Du", filterToTitle: "Au",
     toastAdded: "Dépense ajoutée", toastUpdated: "Dépense mise à jour", toastDeleted: "Dépense supprimée",
+    toastQueued: "Enregistré hors-ligne (sera synchronisé)",
     toastCleared: "Tout effacé", toastNoExport: "Rien à exporter", toastCSV: "CSV exporté",
     toastRenamed: "Projet renommé", toastSaved: "Enregistré",
     confirmClear: "Supprimer toutes les dépenses visibles ? Irréversible.", confirmDelete: "Supprimer cette dépense ?",
+    confirmDiscardPending: "Annuler cette modification en attente ?",
     promptRename: "Nom du projet :", valMsg: "Une description et un montant valide sont requis.",
     editTitle: "Modifier", deleteTitle: "Supprimer",
     installMsg: "Installer pour un accès rapide", installBtn: "Installer", dismissBtn: "Ignorer",
@@ -556,6 +604,7 @@ var dict = {
     promptProjectName: "Nouveau nom :", confirmDeleteProject: "Supprimer le projet « {name} » ? Toutes ses dépenses seront aussi supprimées.",
     noProjectTitle: "Aucun projet affecté", noProjectMsg: "Demandez à un admin de vous affecter à un projet avant d'ajouter des dépenses.",
     dbOnline: "En ligne", dbOffline: "Hors ligne",
+    syncSuffix: "synchronisation", queuedSuffix: "en attente",
     receiptUploading: "Envoi du reçu...", receiptFailed: "Impossible d'envoyer le reçu",
     receiptOpen: "Voir le reçu", receiptNone: "—", receiptThumbAlt: "Reçu"
   }
@@ -580,6 +629,8 @@ function applyLang() {
   setText('statPaidLabel', d.statPaidLabel);
   setText('statUnpaidLabel', d.statUnpaidLabel);
   setText('statPendingLabel', d.statPendingLabel);
+  document.getElementById('budgetCardLabel').textContent = d.budgetCardLabel;
+  document.getElementById('budgetOverLabel').textContent = d.budgetOverLabel;
 
   var ft = document.getElementById('formTitle');
   if (ft) ft.textContent = (document.getElementById('editId').value) ? d.formTitleEdit : d.formTitleAdd;
@@ -606,6 +657,7 @@ function applyLang() {
   setText('thStatus', d.thStatus);
   setText('thNotes', d.thNotes);
   setText('thReceipt', d.thReceipt);
+  setText('thSync', d.thSync);
   setText('resetBtn', d.resetBtn);
   setText('clearBtn', d.clearBtn);
   setText('exportBtn', d.exportBtn);
@@ -769,7 +821,7 @@ async function loadCurrentUser() {
   var uid = session.user.id;
   var { data: prof } = await window.supabase
     .from('profiles')
-    .select('id, full_name, is_admin, project_id, projects(name)')
+    .select('id, full_name, is_admin, project_id, projects(name, budget_amount, budget_alert_pct)')
     .eq('id', uid)
     .single();
 
@@ -785,7 +837,9 @@ async function loadCurrentUser() {
     full_name: prof.full_name || session.user.email,
     is_admin: !!prof.is_admin,
     project_id: prof.project_id || null,
-    project_name: prof.projects ? prof.projects.name : null
+    project_name: prof.projects ? prof.projects.name : null,
+    project_budget: prof.projects ? prof.projects.budget_amount : null,
+    project_alert_pct: prof.projects ? prof.projects.budget_alert_pct : 80
   };
 
   hideLogin();
@@ -794,7 +848,7 @@ async function loadCurrentUser() {
   document.getElementById('date').value = new Date().toISOString().split('T')[0];
   applyLang();
   updateNoProjectBanner();
-  await Promise.all([loadProjects(), loadExpenses()]);
+  await Promise.all([loadProjects(), loadExpenses(), loadProjectSummary()]);
   subscribeRealtime();
   render();
 }
@@ -813,14 +867,34 @@ async function loadExpenses() {
   expenses = error ? [] : (data || []);
 }
 
+async function loadProjectSummary() {
+  var { data, error } = await window.supabase.rpc('get_project_summary');
+  projectSummary = error ? [] : (data || []);
+}
+
+function debouncedRefetchSummary() {
+  if (summaryRefetchTimer) clearTimeout(summaryRefetchTimer);
+  summaryRefetchTimer = setTimeout(function() {
+    loadProjectSummary().then(render);
+  }, 250);
+}
+
 function subscribeRealtime() {
   if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+  if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
+
   realtimeChannel = window.supabase
     .channel('expenses-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, function(payload) {
-      // RLS already filtered what we can see; just sync the local cache
+      // RLS already filtered what we can see; sync the local cache
       if (payload.eventType === 'INSERT') {
-        if (!expenses.find(function(e){ return e.id === payload.new.id; })) expenses.unshift(payload.new);
+        // Dedupe: if there's an optimistic row with the same client_id, replace it in place.
+        var cidIdx = payload.new.client_id ? expenses.findIndex(function(e){ return e._client_id === payload.new.client_id; }) : -1;
+        if (cidIdx >= 0) {
+          expenses[cidIdx] = payload.new;
+        } else if (!expenses.find(function(e){ return e.id === payload.new.id; })) {
+          expenses.unshift(payload.new);
+        }
       } else if (payload.eventType === 'UPDATE') {
         var idx = expenses.findIndex(function(e){ return e.id === payload.new.id; });
         if (idx >= 0) expenses[idx] = payload.new;
@@ -828,7 +902,20 @@ function subscribeRealtime() {
       } else if (payload.eventType === 'DELETE') {
         expenses = expenses.filter(function(e){ return e.id !== payload.old.id; });
       }
+      // Refetch the project summary so the burn-rate card updates even when
+      // another supervisor's row changes (which RLS hides from `expenses`).
+      debouncedRefetchSummary();
       render();
+    })
+    .subscribe(function(status) {
+      if (status === 'SUBSCRIBED') replayQueue();
+    });
+
+  projectsChannel = window.supabase
+    .channel('projects-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, function(_payload) {
+      // Any change to projects (budget edit, rename, add, delete) → refetch summary.
+      debouncedRefetchSummary();
     })
     .subscribe();
 }
@@ -837,8 +924,9 @@ window.supabase.auth.onAuthStateChange(function(event, _session) {
   if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
     loadCurrentUser();
   } else if (event === 'SIGNED_OUT') {
-    currentUser = null; expenses = []; allProjects = [];
+    currentUser = null; expenses = []; allProjects = []; projectSummary = [];
     if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+    if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
     setStorageMode(false);
     updateUserUI();
     render();
@@ -872,15 +960,24 @@ function updateUserUI() {
     adminBtn.classList.add('hidden');
   }
 }
-function setStorageMode(online) {
-  // Frontend has no localStorage fallback in Tier 3 — Supabase or nothing.
-  // We just reflect connectivity in the indicator.
+async function setStorageMode(online) {
   var dot = document.querySelector('#dbIndicator .status-dot');
   var lbl = document.getElementById('dbLabel');
   var btn = document.getElementById('dbIndicator');
-  if (online) { dot.className = 'status-dot dot-server'; lbl.textContent = t('dbOnline'); btn.className = 'btn-db db-server'; }
-  else { dot.className = 'status-dot dot-local'; lbl.textContent = t('dbOffline'); btn.className = 'btn-db db-local'; }
+  var pendingCount = 0;
+  try { pendingCount = (await idbListOps()).length; } catch (e) {}
+  if (online) {
+    dot.className = 'status-dot dot-server';
+    lbl.textContent = pendingCount > 0 ? (t('dbOnline') + ' (' + pendingCount + ' ' + t('syncSuffix') + ')') : t('dbOnline');
+    btn.className = 'btn-db db-server';
+  } else {
+    dot.className = 'status-dot dot-local';
+    lbl.textContent = pendingCount > 0 ? (t('dbOffline') + ' (' + pendingCount + ' ' + t('queuedSuffix') + ')') : t('dbOffline');
+    btn.className = 'btn-db db-local';
+  }
 }
+
+function renderSyncCounter() { setStorageMode(navigator.onLine !== false && !!currentUser); }
 function updateDbIndicator() { setStorageMode(!!currentUser); }
 function updateNoProjectBanner() {
   var banner = document.getElementById('noProjectBanner');
@@ -907,6 +1004,273 @@ function toast(msg) {
 }
 window.toast = toast;
 
+/* ─────────── IndexedDB queue (offline writes) ─────────── */
+var IDB_NAME = 'suividepenses_offline';
+var IDB_VERSION = 1;
+var IDB_STORE = 'pending_ops';
+var idbConn = null;
+
+function uuidv4() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  // RFC4122 v4 polyfill via getRandomValues (universally supported)
+  var b = new Uint8Array(16);
+  window.crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  var h = []; for (var i = 0; i < 16; i++) h.push((b[i] + 0x100).toString(16).slice(1));
+  return h.slice(0,4).join('') + '-' + h.slice(4,6).join('') + '-' + h.slice(6,8).join('') + '-' + h.slice(8,10).join('') + '-' + h.slice(10,16).join('');
+}
+
+function idbOpen() {
+  if (idbConn) return Promise.resolve(idbConn);
+  return new Promise(function(resolve, reject) {
+    var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = function(e) { idbConn = e.target.result; resolve(idbConn); };
+    req.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+function idbAddOp(op) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var store = tx.objectStore(IDB_STORE);
+      var req = store.add(op);
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
+function idbListOps() {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readonly');
+      var req = tx.objectStore(IDB_STORE).getAll();
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
+function idbUpdateOp(id, patch) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var store = tx.objectStore(IDB_STORE);
+      var getReq = store.get(id);
+      getReq.onsuccess = function() {
+        var row = getReq.result;
+        if (!row) return resolve(null);
+        Object.assign(row, patch);
+        var putReq = store.put(row);
+        putReq.onsuccess = function() { resolve(row); };
+        putReq.onerror = function() { reject(putReq.error); };
+      };
+      getReq.onerror = function() { reject(getReq.error); };
+    });
+  });
+}
+
+function idbDeleteOp(id) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var req = tx.objectStore(IDB_STORE).delete(id);
+      req.onsuccess = function() { resolve(); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
+/* ─────────── Mutation router ─────────── */
+// Returns { ok: true, data, fromQueue: false } on direct success,
+//         { ok: true, fromQueue: true, op } when queued,
+//         { ok: false, error } on server-level error.
+function isNetworkError(err) {
+  if (!err) return false;
+  // Supabase-js wraps fetch errors. Distinguish them from PostgrestError (which has `code`/`status`).
+  if (err.code || err.status) return false;
+  if (err.message && /Failed to fetch|NetworkError|TypeError|timeout/i.test(err.message)) return true;
+  return false;
+}
+
+async function tryDirect(fn) {
+  try {
+    var res = await fn();
+    if (res && res.error) return { ok: false, error: res.error };
+    return { ok: true, data: res ? res.data : null };
+  } catch (err) {
+    return { ok: false, error: err };
+  }
+}
+
+async function routedWrite(opSpec, directFn) {
+  // opSpec: { op_type, client_id, target_id?, payload?, blob?, mime?, ext? }
+  // If navigator.onLine is explicitly false, skip the direct attempt.
+  if (navigator.onLine !== false) {
+    var direct = await tryDirect(directFn);
+    if (direct.ok) return { ok: true, data: direct.data, fromQueue: false };
+    if (!isNetworkError(direct.error)) {
+      // Server-level error (RLS, validation, 5xx) — surface, do not queue.
+      return { ok: false, error: direct.error };
+    }
+    // Network error → fall through to queueing.
+  }
+  var op = Object.assign({
+    created_at: new Date().toISOString(),
+    attempts: 0,
+    last_error: null
+  }, opSpec);
+  var id = await idbAddOp(op);
+  op.id = id;
+  return { ok: true, fromQueue: true, op: op };
+}
+
+/* ─────────── Queue replay ─────────── */
+var replayInFlight = false;
+
+async function replayQueue() {
+  if (replayInFlight) return;
+  if (navigator.onLine === false) return;
+  replayInFlight = true;
+  try {
+    var ops = await idbListOps();
+    // FIFO by IDB autoincrement id
+    ops.sort(function(a,b){ return a.id - b.id; });
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      try {
+        await replayOne(op);
+        await idbDeleteOp(op.id);
+        renderSyncCounter();
+      } catch (err) {
+        if (isNetworkError(err)) {
+          // Stop the drain; will retry on next reconnect
+          break;
+        }
+        // Server-side rejection — mark and keep so the user can retry/delete
+        await idbUpdateOp(op.id, {
+          attempts: (op.attempts || 0) + 1,
+          last_error: (err && err.message) || String(err)
+        });
+      }
+    }
+    // Mark any rows whose ops failed (last_error set) as rejected
+    var afterOps = await idbListOps();
+    var rejectedClientIds = afterOps.filter(function(o){ return o.last_error; }).map(function(o){ return o.client_id; });
+    expenses.forEach(function(e) {
+      if (e._client_id && rejectedClientIds.indexOf(e._client_id) >= 0) {
+        e._rejected = true;
+        e._pending = false;
+      }
+    });
+    // Refresh the summary after a drain
+    await loadProjectSummary();
+    render();
+    updateSyncIndicator();
+  } finally {
+    replayInFlight = false;
+  }
+}
+
+async function replayOne(op) {
+  if (op.op_type === 'insert') {
+    // Idempotent insert via on conflict (client_id) do nothing — using upsert with onConflict
+    var payload = Object.assign({}, op.payload, { client_id: op.client_id });
+    var ins = await window.supabase
+      .from('expenses')
+      .upsert(payload, { onConflict: 'client_id', ignoreDuplicates: false })
+      .select()
+      .single();
+    if (ins.error) throw ins.error;
+    var realId = ins.data.id;
+    // Replace the optimistic row in the local cache
+    var idx = expenses.findIndex(function(e){ return e._client_id === op.client_id; });
+    if (idx >= 0) expenses[idx] = ins.data;
+    if (op.blob) {
+      var path = currentUser.id + '/' + realId + '.' + (op.ext || 'jpg');
+      var up = await window.supabase.storage.from('receipts').upload(path, op.blob, { upsert: true, contentType: op.mime || 'image/jpeg' });
+      if (up.error) throw up.error;
+      var rp = await window.supabase.from('expenses').update({ receipt_path: path }).eq('id', realId);
+      if (rp.error) throw rp.error;
+    }
+    return;
+  }
+  if (op.op_type === 'update') {
+    var upd = await window.supabase.from('expenses').update(op.payload).eq('id', op.target_id).select();
+    if (upd.error) throw upd.error;
+    if (!upd.data || upd.data.length === 0) throw new Error('Update affected 0 rows (likely RLS rejection or row deleted)');
+    if (op.blob) {
+      var path = currentUser.id + '/' + op.target_id + '.' + (op.ext || 'jpg');
+      var up = await window.supabase.storage.from('receipts').upload(path, op.blob, { upsert: true, contentType: op.mime || 'image/jpeg' });
+      if (up.error) throw up.error;
+      var rp = await window.supabase.from('expenses').update({ receipt_path: path }).eq('id', op.target_id);
+      if (rp.error) throw rp.error;
+    }
+    return;
+  }
+  if (op.op_type === 'delete') {
+    // Receipt cleanup is best-effort; ignore errors
+    var existing = expenses.find(function(e){ return e.id === op.target_id; });
+    if (existing && existing.receipt_path) {
+      await window.supabase.storage.from('receipts').remove([existing.receipt_path]).catch(function(){});
+    }
+    var del = await window.supabase.from('expenses').delete().eq('id', op.target_id).select();
+    if (del.error) throw del.error;
+    if (!del.data || del.data.length === 0) {
+      // No rows deleted: row was already gone (idempotent) OR RLS blocked it. We
+      // treat this as success — either way there's nothing to remove server-side.
+      return;
+    }
+    return;
+  }
+  throw new Error('Unknown op_type: ' + op.op_type);
+}
+
+function updateSyncIndicator() {
+  // Placeholder — Task 14 implements the visible counter
+  if (typeof renderSyncCounter === 'function') renderSyncCounter();
+}
+
+async function retryPendingOp(clientId) {
+  if (!clientId) return;
+  var ops = await idbListOps();
+  var op = ops.find(function(o){ return o.client_id === clientId; });
+  if (!op) return;
+  await idbUpdateOp(op.id, { last_error: null });
+  // Also clear the _rejected flag locally so the row no longer shows as red while replay attempts
+  var idx = expenses.findIndex(function(e){ return e._client_id === clientId; });
+  if (idx >= 0) { expenses[idx]._rejected = false; expenses[idx]._pending = true; }
+  render();
+  replayQueue();
+}
+window.retryPendingOp = retryPendingOp;
+
+async function discardPendingOp(clientId) {
+  if (!clientId) return;
+  if (!confirm(t('confirmDiscardPending') || 'Discard this pending change?')) return;
+  var ops = await idbListOps();
+  var op = ops.find(function(o){ return o.client_id === clientId; });
+  if (op) await idbDeleteOp(op.id);
+  // Remove the optimistic row from the local cache
+  expenses = expenses.filter(function(e){ return e._client_id !== clientId; });
+  render();
+}
+window.discardPendingOp = discardPendingOp;
+
+/* ─────────── Reconnect triggers ─────────── */
+window.addEventListener('online', function() { renderSyncCounter(); replayQueue(); });
+window.addEventListener('offline', function() { renderSyncCounter(); });
+window.addEventListener('focus', function() { replayQueue(); });
+window.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') replayQueue(); });
+
 /* ─────────── expense CRUD ─────────── */
 async function saveExpense() {
   var desc = document.getElementById('desc').value.trim();
@@ -931,17 +1295,55 @@ async function saveExpense() {
     payload.user_id = currentUser.id;
     payload.project_id = currentUser.project_id;  /* admins without a project can't add via UI; assign yourself first */
     if (!payload.project_id) { toast(t('noProjectMsg')); return; }
-    var { data, error } = await window.supabase.from('expenses').insert(payload).select().single();
-    if (error) { toast(error.message); return; }
-    if (file) await uploadReceipt(data.id, file);
+    var clientId = uuidv4();
+    payload.client_id = clientId;
+
+    var spec = {
+      op_type: 'insert',
+      client_id: clientId,
+      payload: payload,
+      blob: file || null,
+      mime: file ? file.type : null,
+      ext: file ? (file.name.split('.').pop() || 'jpg').toLowerCase() : null
+    };
+    var res = await routedWrite(spec, function() {
+      return window.supabase.from('expenses').upsert(payload, { onConflict: 'client_id', ignoreDuplicates: false }).select().single();
+    });
+    if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+    if (res.fromQueue) {
+      // Optimistic local row
+      expenses.unshift(Object.assign({ id: '__local_' + clientId, _pending: true, _client_id: clientId }, payload));
+    } else if (file && res.data && res.data.id) {
+      await uploadReceipt(res.data.id, file);
+    }
     cancelEdit();
-    toast(t('toastAdded'));
+    render();
+    if (!res.fromQueue) debouncedRefetchSummary();
+    toast(res.fromQueue ? t('toastQueued') : t('toastAdded'));
   } else {
-    var { error } = await window.supabase.from('expenses').update(payload).eq('id', editId);
-    if (error) { toast(error.message); return; }
-    if (file) await uploadReceipt(editId, file);
+    var spec = {
+      op_type: 'update',
+      client_id: uuidv4(),
+      target_id: editId,
+      payload: payload,
+      blob: file || null,
+      mime: file ? file.type : null,
+      ext: file ? (file.name.split('.').pop() || 'jpg').toLowerCase() : null
+    };
+    var res = await routedWrite(spec, function() {
+      return window.supabase.from('expenses').update(payload).eq('id', editId);
+    });
+    if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+    if (res.fromQueue) {
+      var idx = expenses.findIndex(function(e){ return e.id === editId; });
+      if (idx >= 0) expenses[idx] = Object.assign({}, expenses[idx], payload, { _pending: true, _client_id: spec.client_id });
+    } else if (file) {
+      await uploadReceipt(editId, file);
+    }
     cancelEdit();
-    toast(t('toastUpdated'));
+    render();
+    if (!res.fromQueue) debouncedRefetchSummary();
+    toast(res.fromQueue ? t('toastQueued') : t('toastUpdated'));
   }
 }
 window.saveExpense = saveExpense;
@@ -1003,11 +1405,29 @@ window.cancelEdit = cancelEdit;
 async function deleteExpense(id) {
   if (!confirm(t('confirmDelete'))) return;
   var e = expenses.find(function(x){ return x.id === id; });
-  if (e && e.receipt_path) await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
-  var { error } = await window.supabase.from('expenses').delete().eq('id', id);
-  if (error) { toast(error.message); return; }
+  var spec = {
+    op_type: 'delete',
+    client_id: uuidv4(),
+    target_id: id,
+    payload: null,
+    blob: null
+  };
+  var res = await routedWrite(spec, async function() {
+    if (e && e.receipt_path) {
+      await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
+    }
+    return window.supabase.from('expenses').delete().eq('id', id);
+  });
+  if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+  // Remove locally either way.
+  // TODO(offline): if `fromQueue` and the replay later rejects, the user has
+  // no UI affordance to retry — the row is gone from `expenses`. Future fix:
+  // mark-and-hide instead of removing, so rejection can resurface the row.
+  expenses = expenses.filter(function(x){ return x.id !== id; });
   if (document.getElementById('editId').value === id) cancelEdit();
-  toast(t('toastDeleted'));
+  render();
+  if (!res.fromQueue) debouncedRefetchSummary();
+  toast(res.fromQueue ? t('toastQueued') : t('toastDeleted'));
 }
 window.deleteExpense = deleteExpense;
 
@@ -1066,7 +1486,68 @@ function getFiltered() {
     });
 }
 
+window.computeOfflineSpentDelta = function() {
+  // Sums the user's own offline-pending insert amounts (for the current project).
+  // UPDATEs/DELETEs are reflected via _pending/_rejected flags on the local row,
+  // not via this delta — so we only count optimistic INSERT rows.
+  var delta = 0;
+  if (!currentUser || !currentUser.project_id) return 0;
+  expenses.forEach(function(e) {
+    if (e._pending && !e._rejected && e.project_id === currentUser.project_id && typeof e.id === 'string' && e.id.indexOf('__local_') === 0) {
+      delta += Number(e.amount || 0);
+    }
+  });
+  return delta;
+};
+
+function computeBudgetCardState() {
+  // Returns { visible, spent, budget, alertPct, color, isStale } or { visible: false }.
+  if (!currentUser) return { visible: false };
+
+  if (currentUser.is_admin) {
+    // Admin viewing all projects: sum across non-null-budget projects.
+    var withBudgets = projectSummary.filter(function(s){ return s.budget_amount; });
+    if (withBudgets.length === 0) return { visible: false };
+    var spent  = withBudgets.reduce(function(a,s){ return a + Number(s.spent || 0); }, 0);
+    var budget = withBudgets.reduce(function(a,s){ return a + Number(s.budget_amount || 0); }, 0);
+    var alertPct = 80;
+    return finishBudgetState(spent, budget, alertPct, false);
+  }
+
+  // Supervisor: their own project.
+  var row = projectSummary.find(function(s){ return s.project_id === currentUser.project_id; });
+  if (!row || !row.budget_amount) return { visible: false };
+
+  // Adjust for the user's own offline pending ops (Phase 2 will populate this).
+  var offlineDelta = (window.computeOfflineSpentDelta && window.computeOfflineSpentDelta()) || 0;
+  var spent = Number(row.spent || 0) + offlineDelta;
+  return finishBudgetState(spent, Number(row.budget_amount), Number(row.budget_alert_pct || 80), offlineDelta !== 0);
+}
+
+function finishBudgetState(spent, budget, alertPct, isStale) {
+  var ratio = budget > 0 ? (spent / budget) : 0;
+  var color = (ratio >= 1.0) ? 'red' : (ratio >= alertPct/100) ? 'amber' : 'green';
+  return { visible: true, spent: spent, budget: budget, alertPct: alertPct, color: color, isStale: isStale, ratio: ratio };
+}
+
+function renderBudgetCard() {
+  var card = document.getElementById('budgetCard');
+  var state = computeBudgetCardState();
+  if (!state.visible) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('budgetSpent').textContent = fmtAmount(state.spent);
+  document.getElementById('budgetTotal').textContent = fmtAmount(state.budget);
+  var bar = document.getElementById('budgetBar');
+  bar.className = 'budget-bar ' + state.color;
+  var pct = Math.min(100, Math.round(state.ratio * 100));
+  bar.firstElementChild.style.width = pct + '%';
+  document.getElementById('budgetOverLabel').style.display = state.color === 'red' ? '' : 'none';
+  card.classList.toggle('stale', !!state.isStale);
+  card.title = state.isStale ? t('budgetStaleTooltip') : '';
+}
+
 function render() {
+  renderBudgetCard();
   var filtered = getFiltered();
   var total = expenses.reduce(function(s, e){ return s + Number(e.amount || 0); }, 0);
   var paid    = expenses.filter(function(e){return e.status==='Paid';}   ).reduce(function(s,e){return s+Number(e.amount||0);},0);
@@ -1090,7 +1571,17 @@ function render() {
     var receipt = e.receipt_path
       ? '<button type="button" class="receipt-link" onclick="openReceipt(\'' + escAttr(e.receipt_path) + '\')" title="' + t('receiptOpen') + '">📎</button>'
       : t('receiptNone');
-    return '<tr>' +
+    var rowClass = '';
+    if (e._pending) rowClass = 'row-pending';
+    if (e._rejected) rowClass = 'row-rejected';
+    var syncCell;
+    if (e._pending) syncCell = '<span title="Pending sync">🕒</span>';
+    else if (e._rejected) {
+      syncCell = '<button class="icon-btn" onclick="retryPendingOp(\'' + escAttr(e._client_id || '') + '\')" title="Retry">⚠️</button>'
+               + '<button class="icon-btn danger" onclick="discardPendingOp(\'' + escAttr(e._client_id || '') + '\')" title="Discard">✕</button>';
+    } else syncCell = '';
+
+    return '<tr class="' + rowClass + '">' +
       '<td data-label="' + d.thDate + '">' + esc(e.date || '—') + '</td>' +
       '<td data-label="' + d.thDesc + '">' + esc(e.description || '') + '</td>' +
       '<td data-label="' + d.thCat  + '">' + displayCat(e.category) + '</td>' +
@@ -1099,11 +1590,13 @@ function render() {
       '<td data-label="' + d.thStatus + '">' + badge(e.status) + '</td>' +
       '<td class="notes-cell" data-label="' + d.thNotes + '" title="' + escAttr(e.notes || '') + '">' + (e.notes ? esc(e.notes) : '—') + '</td>' +
       '<td data-label="' + d.thReceipt + '">' + receipt + '</td>' +
+      '<td data-label="' + d.thSync + '">' + syncCell + '</td>' +
       '<td class="actions-cell"><div class="row-actions">' +
         '<button class="icon-btn" onclick="editExpense(\'' + escAttr(e.id) + '\')" title="' + et + '">✎</button>' +
         '<button class="icon-btn danger" onclick="deleteExpense(\'' + escAttr(e.id) + '\')" title="' + dt + '">✕</button>' +
       '</div></td></tr>';
   }).join('');
+  renderSyncCounter();
 }
 window.render = render;
 
@@ -1165,7 +1658,7 @@ function refreshAdminListsIfOpen() {
 }
 
 async function refreshAdminProjectList() {
-  var { data, error } = await window.supabase.from('projects').select('id, name').order('name');
+  var { data, error } = await window.supabase.from('projects').select('id, name, budget_amount, budget_alert_pct').order('name');
   if (error) { setAdminError(t('adminLoadFailed')); return; }
   allProjects = data || [];
   var list = document.getElementById('adminProjectList');
@@ -1175,7 +1668,10 @@ async function refreshAdminProjectList() {
     list.innerHTML = allProjects.map(function(p) {
       return '<div class="admin-user-row">' +
         '<span class="name">' + esc(p.name) + '</span>' +
+        '<input type="number" min="0" step="0.01" placeholder="' + t('adminBudgetInput') + '" id="bud_' + escAttr(p.id) + '" value="' + (p.budget_amount == null ? '' : esc(String(p.budget_amount))) + '" style="width:110px">' +
+        '<input type="number" min="0" max="100" step="1" title="' + t('adminAlertPct') + '" id="alr_' + escAttr(p.id) + '" value="' + (p.budget_alert_pct == null ? 80 : esc(String(p.budget_alert_pct))) + '" style="width:70px">' +
         '<div class="actions">' +
+          '<button type="button" onclick="adminSaveBudget(\'' + escAttr(p.id) + '\', document.getElementById(\'bud_' + escAttr(p.id) + '\').value, document.getElementById(\'alr_' + escAttr(p.id) + '\').value)">' + t('adminBudgetSave') + '</button>' +
           '<button type="button" onclick="adminRenameProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminRenameProject') + '</button>' +
           '<button type="button" class="danger" onclick="adminDeleteProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminDelete') + '</button>' +
         '</div></div>';
@@ -1220,6 +1716,27 @@ async function adminDeleteProject(pid, name) {
   toast(t('adminProjectDeleted'));
 }
 window.adminDeleteProject = adminDeleteProject;
+
+async function adminSaveBudget(pid, budgetStr, alertStr) {
+  var trimmed = (budgetStr || '').trim();
+  var budget = trimmed === '' ? null : Number(trimmed);
+  if (budget !== null && (isNaN(budget) || budget < 0)) { setAdminError(t('adminBudgetInvalid') || 'Invalid budget'); return; }
+
+  var alertNum = parseInt(alertStr, 10);
+  if (isNaN(alertNum) || alertNum < 0 || alertNum > 100) alertNum = 80;
+
+  var { error } = await window.supabase
+    .from('projects')
+    .update({ budget_amount: budget, budget_alert_pct: alertNum })
+    .eq('id', pid);
+  if (error) { setAdminError(error.message); return; }
+  // Note: refreshAdminProjectList rebuilds inputs from scratch, so any concurrent
+  // admin typing in another row will be lost. Acceptable for typical 1-admin teams.
+  refreshAdminProjectList();
+  toast(t('adminBudgetSaved'));
+  // Realtime channel will trigger debouncedRefetchSummary() automatically.
+}
+window.adminSaveBudget = adminSaveBudget;
 
 async function refreshAdminUserList() {
   var { data: users, error } = await window.supabase

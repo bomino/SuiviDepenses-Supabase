@@ -28,7 +28,7 @@ with the values from the Supabase dashboard → Project Settings → API.
 
 **Applying migrations**: open the Supabase SQL editor and paste each `supabase/migrations/*.sql` file in filename order. There is no `supabase` CLI workflow here. Migrations are idempotent (`if not exists`, `on conflict`, `drop policy if exists`) so re-running is safe.
 
-**Pushing a new frontend version to clients**: bump `CACHE = 'expenses-supabase-v1'` in `sw.js` to a new value. The service worker only refreshes cached assets when this string changes — without a bump, returning users keep seeing the old build.
+**Pushing a new frontend version to clients**: handled automatically. The `.github/workflows/deploy.yml` workflow runs on every push to `main`, replaces the `__VERSION__` placeholder in `sw.js` with the short Git SHA, and deploys to GitHub Pages at `https://bomino.github.io/SuiviDepenses-Supabase/`. Returning users get the new build on next visit because the cache key changed. **Do not hardcode a real value into `sw.js`** — keep the `__VERSION__` placeholder; CI substitutes at deploy time. For local dev (`http.server` etc.) the placeholder is fine as a literal — it just acts as a stable cache key.
 
 ## Architecture (the bits that span files)
 
@@ -63,6 +63,24 @@ Receipts are private; the UI fetches them with `createSignedUrl(path, 60)` (60-s
 ### Realtime sync is a single channel with client-side reconciliation
 
 `subscribeRealtime()` in `index.html` opens one channel on `public.expenses`, and a single `postgres_changes` handler dispatches INSERT/UPDATE/DELETE into the local `expenses` array. RLS already filters what the channel delivers, so the handler doesn't re-check authorization. If you add a new table that needs live updates, you must also add `alter publication supabase_realtime add table public.<name>;` (mirrors the line at the bottom of `_schema.sql`).
+
+### Burn-rate goes through `get_project_summary()`, not client-side SUM
+
+The "Budget" stat card aggregates spent-per-project via the `SECURITY DEFINER` RPC `get_project_summary()` in `_project_budgets.sql`. **Do not replace this with `SELECT SUM(amount) FROM expenses`** — RLS would hide other supervisors' rows from the calling supervisor and the card would silently undercount. The function bypasses RLS for the aggregation but enforces authorization (admin OR caller's assigned project) inside the body.
+
+A second realtime channel on `public.projects` keeps the card live when admins edit budgets.
+
+### Offline writes go through a mutation router and an IndexedDB queue
+
+Every write (`saveExpense`, `deleteExpense`) goes through `routedWrite(spec, directFn)`. It tries the Supabase call first; if that fails with a **network-level** error (or `navigator.onLine === false`), the op lands in IDB store `pending_ops` (DB `suividepenses_offline`). **Server-level errors (RLS, validation, 5xx) are NOT queued** — they surface inline as today.
+
+Replay is FIFO and triggered by: `window.online` event, window focus, document visibility change, and the realtime channel reaching `SUBSCRIBED`. The replay executor for INSERT uses `upsert(payload, { onConflict: 'client_id' })` so a network blip during the direct attempt that landed the row but lost the response becomes a no-op on retry.
+
+Receipt blobs are queued **inline** on the insert/update op (no separate `upload_receipt` op type). The replay sequence for an insert with a blob is: INSERT → upload to `receipts/<user_id>/<real_id>.<ext>` → UPDATE `receipt_path`.
+
+**Don't add a sync library** (Dexie, RxDB, etc.) — the wrapper is intentionally ~80 lines of raw IndexedDB to match the no-toolchain ethos.
+
+**Known limitation:** offline DELETE removes the row locally immediately for good UX. If the replay is later rejected (RLS, e.g. user demoted mid-session), the rejected op stays in IDB but there's no UI affordance to surface it — the user can only see it via DevTools. Future fix is mark-and-hide instead of removal. See `// TODO(offline)` in `deleteExpense`.
 
 ### `index.html` has two `<script>` blocks on purpose
 

@@ -61,6 +61,8 @@ Open **SQL editor** in the Supabase dashboard (lightning-bolt icon). For each fi
 | 2 | `20260101000002_rls.sql` | Enables RLS on every table and installs the policies (admins see all, supervisors see only their own project's rows). |
 | 3 | `20260101000003_storage.sql` | Creates the `receipts` storage bucket and its RLS policies (a supervisor can only put/get files under their own UUID prefix). |
 | 4 | `20260101000004_admin_helpers.sql` | Installs `set_user_admin`, `assign_user_project`, `claim_first_admin` RPCs that the admin panel calls. |
+| 5 | `20260430000005_project_budgets.sql` | Adds budget columns to `projects`, the `get_project_summary()` aggregation RPC (SECURITY DEFINER), and adds `projects` to the realtime publication. |
+| 6 | `20260430000006_expense_client_id.sql` | Adds `expenses.client_id` + unique partial index for offline INSERT idempotency. |
 
 Each migration is **idempotent** (uses `if not exists` and `on conflict`), so re-running them is safe.
 
@@ -127,11 +129,15 @@ Open http://localhost:8000. The login overlay should appear. If not, check the b
 
 Pick the host you prefer. All of these are free.
 
-### GitHub Pages (zero config)
+### GitHub Pages (recommended — automated via Actions)
 
-1. Push the repo to a public GitHub repository.
-2. Repo → **Settings → Pages** → Source: **Deploy from a branch**, branch: `main`, folder: `/ (root)` → **Save**.
+This repo includes `.github/workflows/deploy.yml`, a workflow that auto-deploys to GitHub Pages on every push to `main`.
+
+1. Push the repo to a GitHub repository (public or private — Pages works for both on free tier with public repos, paid for private).
+2. The first push to `main` runs the workflow, which auto-enables Pages with **Source: GitHub Actions** (no manual UI step needed).
 3. URL becomes `https://<your-username>.github.io/<repo-name>/`. Add it to Supabase **Auth → URL Configuration → Site URL & Redirect URLs**.
+
+The workflow also injects the short Git SHA into `sw.js`'s `CACHE` constant at deploy time, so returning users automatically pick up new builds on their next visit. Do not edit the `__VERSION__` placeholder in `sw.js` — leave it as-is.
 
 ### Vercel (drag-and-drop)
 
@@ -179,6 +185,28 @@ Run through this checklist as the first admin:
 8. As the supervisor, try to access another project's data via DevTools → Network: the response should be empty (RLS blocks it).
 
 If all 8 pass, you're production-ready.
+
+### 9.x Budget feature (post-Phase-1)
+
+1. As admin, **Manage Users → Projects**: set Budget=1000, Alert=80 on a project. Toast confirms.
+2. On the home screen the new Budget card shows `0 / 1000` in green.
+3. Add expenses summing to 800. The bar turns amber.
+4. Add expenses past 1000. The bar turns red; "Dépassement" label appears.
+5. Sign in (different browser) as a supervisor on that project. Their card shows the same totals.
+6. **Cross-supervisor accuracy** — sign in as a second supervisor on the same project. Each adds 200/500 respectively. Both cards show `700 / 1000`, not just their own subtotal. (Validates the SECURITY DEFINER RPC.)
+7. **Live budget edit** — open admin and supervisor in two browsers. Admin edits the budget. Supervisor's card updates within ~1s without reload.
+
+### 9.y Offline writes (post-Phase-2)
+
+1. DevTools → Application → Service workers → check "Offline" (or Network tab → Offline).
+2. Add 5 expenses via the form. Each row appears faded with 🕒. Pill reads `Hors ligne (5 en attente)`.
+3. Uncheck Offline. Rows settle (full opacity, no clock) within ~1s. Pill returns to `En ligne`.
+4. Add an expense with a receipt photo while offline. Toggle online. Receipt uploads after the row sync completes.
+5. While offline, edit an existing expense. Optimistic update visible. Settles on reconnect.
+6. While offline, delete an expense. Row vanishes. Stays gone after reconnect.
+7. While offline, in another browser as admin, edit the row that user A is editing offline. User A reconnects → user A's edit wins (last-write-wins; expected).
+8. Demote a user (admin → set is_admin=false on their profile) and unassign their project mid-offline-session, then have them replay. Rejected ops surface with ⚠️ and a Retry option.
+9. Force-quit the browser tab while ops are queued. Re-open. Queue persists, drains on reconnect.
 
 ---
 
