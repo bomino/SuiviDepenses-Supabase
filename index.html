@@ -427,6 +427,9 @@ var realtimeChannel = null;
 var deferredPrompt = null;
 var authMode = 'signin';          /* 'signin' | 'signup' | 'magic' */
 var pendingReceiptFile = null;    /* File chosen in the form, applied on save */
+var projectSummary = [];           /* [{ project_id, name, budget_amount, budget_alert_pct, spent, expense_count }] */
+var projectsChannel = null;        /* second realtime channel */
+var summaryRefetchTimer = null;    /* debounce handle */
 
 /* ─────────── PWA install ─────────── */
 window.addEventListener('beforeinstallprompt', function(e) {
@@ -769,7 +772,7 @@ async function loadCurrentUser() {
   var uid = session.user.id;
   var { data: prof } = await window.supabase
     .from('profiles')
-    .select('id, full_name, is_admin, project_id, projects(name)')
+    .select('id, full_name, is_admin, project_id, projects(name, budget_amount, budget_alert_pct)')
     .eq('id', uid)
     .single();
 
@@ -785,7 +788,9 @@ async function loadCurrentUser() {
     full_name: prof.full_name || session.user.email,
     is_admin: !!prof.is_admin,
     project_id: prof.project_id || null,
-    project_name: prof.projects ? prof.projects.name : null
+    project_name: prof.projects ? prof.projects.name : null,
+    project_budget: prof.projects ? prof.projects.budget_amount : null,
+    project_alert_pct: prof.projects ? prof.projects.budget_alert_pct : 80
   };
 
   hideLogin();
@@ -794,7 +799,7 @@ async function loadCurrentUser() {
   document.getElementById('date').value = new Date().toISOString().split('T')[0];
   applyLang();
   updateNoProjectBanner();
-  await Promise.all([loadProjects(), loadExpenses()]);
+  await Promise.all([loadProjects(), loadExpenses(), loadProjectSummary()]);
   subscribeRealtime();
   render();
 }
@@ -811,6 +816,18 @@ async function loadExpenses() {
     .order('date', { ascending: false })
     .order('id', { ascending: false });
   expenses = error ? [] : (data || []);
+}
+
+async function loadProjectSummary() {
+  var { data, error } = await window.supabase.rpc('get_project_summary');
+  projectSummary = error ? [] : (data || []);
+}
+
+function debouncedRefetchSummary() {
+  if (summaryRefetchTimer) clearTimeout(summaryRefetchTimer);
+  summaryRefetchTimer = setTimeout(function() {
+    loadProjectSummary().then(render);
+  }, 250);
 }
 
 function subscribeRealtime() {
