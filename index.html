@@ -897,7 +897,9 @@ function subscribeRealtime() {
       debouncedRefetchSummary();
       render();
     })
-    .subscribe();
+    .subscribe(function(status) {
+      if (status === 'SUBSCRIBED') replayQueue();
+    });
 
   projectsChannel = window.supabase
     .channel('projects-live')
@@ -1201,6 +1203,11 @@ function updateSyncIndicator() {
   // Placeholder — Task 14 implements the visible counter
   if (typeof renderSyncCounter === 'function') renderSyncCounter();
 }
+
+/* ─────────── Reconnect triggers ─────────── */
+window.addEventListener('online', function() { replayQueue(); });
+window.addEventListener('focus', function() { replayQueue(); });
+window.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') replayQueue(); });
 
 /* ─────────── expense CRUD ─────────── */
 async function saveExpense() {
