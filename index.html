@@ -832,10 +832,12 @@ function debouncedRefetchSummary() {
 
 function subscribeRealtime() {
   if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+  if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
+
   realtimeChannel = window.supabase
     .channel('expenses-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, function(payload) {
-      // RLS already filtered what we can see; just sync the local cache
+      // RLS already filtered what we can see; sync the local cache
       if (payload.eventType === 'INSERT') {
         if (!expenses.find(function(e){ return e.id === payload.new.id; })) expenses.unshift(payload.new);
       } else if (payload.eventType === 'UPDATE') {
@@ -845,7 +847,18 @@ function subscribeRealtime() {
       } else if (payload.eventType === 'DELETE') {
         expenses = expenses.filter(function(e){ return e.id !== payload.old.id; });
       }
+      // Refetch the project summary so the burn-rate card updates even when
+      // another supervisor's row changes (which RLS hides from `expenses`).
+      debouncedRefetchSummary();
       render();
+    })
+    .subscribe();
+
+  projectsChannel = window.supabase
+    .channel('projects-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, function(_payload) {
+      // Any change to projects (budget edit, rename, add, delete) → refetch summary.
+      debouncedRefetchSummary();
     })
     .subscribe();
 }
@@ -854,8 +867,9 @@ window.supabase.auth.onAuthStateChange(function(event, _session) {
   if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
     loadCurrentUser();
   } else if (event === 'SIGNED_OUT') {
-    currentUser = null; expenses = []; allProjects = [];
+    currentUser = null; expenses = []; allProjects = []; projectSummary = [];
     if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+    if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
     setStorageMode(false);
     updateUserUI();
     render();
