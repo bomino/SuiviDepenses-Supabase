@@ -499,6 +499,8 @@ var dict = {
     adminInviteSent: "Invitation sent",
     adminInviteFailed: "Invite failed",
     adminInviteEmailRequired: "Email is required",
+    adminPendingTag: "Pending",
+    adminPendingTooltip: "Invited but has not signed in yet",
     budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
@@ -568,6 +570,8 @@ var dict = {
     adminInviteSent: "Invitation envoyée",
     adminInviteFailed: "Échec de l'invitation",
     adminInviteEmailRequired: "L'e-mail est requis",
+    adminPendingTag: "En attente",
+    adminPendingTooltip: "Invité mais ne s'est pas encore connecté",
     budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
@@ -1767,29 +1771,28 @@ async function adminSaveBudget(pid, budgetStr, alertStr) {
 window.adminSaveBudget = adminSaveBudget;
 
 async function refreshAdminUserList() {
-  var { data: users, error } = await window.supabase
-    .from('profiles')
-    .select('id, full_name, is_admin, project_id, projects(name)')
-    .order('full_name');
+  var { data: users, error } = await window.supabase.rpc('get_user_directory');
   if (error) { setAdminError(t('adminLoadFailed')); return; }
-  /* enrich with email via auth.users — only available to admins through a view; fallback to id */
   var list = document.getElementById('adminUserList');
   list.innerHTML = (users || []).map(function(u) {
     var isMe = currentUser && u.id === currentUser.id;
     var roleClass = u.is_admin ? 'role-admin' : 'role-user';
     var roleLabel = u.is_admin ? t('adminRoleTagAdmin') : t('adminRoleTagUser');
     var toggleLabel = u.is_admin ? t('adminMakeWorker') : t('adminMakeAdmin');
-    var deleteDisabled = isMe ? 'disabled' : '';
     var demoteDisabled = (isMe && u.is_admin) ? 'disabled' : '';
-    var displayName = u.full_name || u.id.slice(0, 8) + '…';
+    var pending = !u.last_sign_in_at;
+    var displayPrimary = u.email || (u.id ? u.id.slice(0, 8) + '…' : '?');
+    var displaySecondary = u.full_name && u.full_name !== u.email ? u.full_name : '';
+    var pendingBadge = pending ? '<span class="role-tag" style="background:rgba(245,158,11,.15);color:var(--amber)" title="' + t('adminPendingTooltip') + '">' + t('adminPendingTag') + '</span>' : '';
     var projectOptions = '<option value="">' + t('adminProjectNone') + '</option>' +
       allProjects.map(function(p) {
         var sel = (u.project_id === p.id) ? ' selected' : '';
         return '<option value="' + escAttr(p.id) + '"' + sel + '>' + esc(p.name) + '</option>';
       }).join('');
     return '<div class="admin-user-row">' +
-      '<span class="name">' + esc(displayName) + '</span>' +
+      '<span class="name">' + esc(displayPrimary) + (displaySecondary ? ' <span style="color:var(--sub);font-size:.7rem">(' + esc(displaySecondary) + ')</span>' : '') + '</span>' +
       '<span class="role-tag ' + roleClass + '">' + roleLabel + '</span>' +
+      pendingBadge +
       '<select onchange="adminAssignProject(\'' + escAttr(u.id) + '\', this.value)" title="' + t('adminProjectAssign') + '">' + projectOptions + '</select>' +
       '<div class="actions">' +
         '<button type="button" ' + demoteDisabled + ' onclick="adminToggleAdmin(\'' + escAttr(u.id) + '\',' + (!u.is_admin) + ')">' + toggleLabel + '</button>' +
@@ -1825,7 +1828,18 @@ async function adminInviteUser(ev) {
   try {
     var redirectTo = window.location.origin + window.location.pathname;
     var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email, redirectTo: redirectTo } });
-    if (error) { setAdminError(error.message || t('adminInviteFailed')); return; }
+    if (error) {
+      // supabase-js wraps non-2xx responses with a generic message and stashes
+      // the real Response on error.context. Pull our function's JSON body off
+      // it so the user sees the actual GoTrue error (e.g. "User already
+      // registered", "Email rate limit exceeded").
+      var detail = '';
+      if (error.context && typeof error.context.json === 'function') {
+        try { var b = await error.context.json(); detail = (b && b.error) || ''; } catch (_) {}
+      }
+      setAdminError(detail || error.message || t('adminInviteFailed'));
+      return;
+    }
     if (data && data.error) { setAdminError(data.error); return; }
     input.value = '';
     refreshAdminUserList();
