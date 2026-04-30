@@ -172,6 +172,19 @@ Pas besoin d'actualiser. Si la connexion réseau est rompue, les modifications f
 
 ---
 
+## 6.bis Travailler hors-ligne
+
+L'application enregistre vos dépenses même sans connexion. Quand vous êtes hors réseau (sous-sol, ascenseur, zone blanche) :
+
+- L'indicateur en haut affiche **Hors ligne (n en attente)** — `n` est le nombre de saisies à synchroniser.
+- Vos nouvelles dépenses apparaissent dans la liste avec une icône 🕒 et un effet grisé : elles sont stockées sur votre téléphone.
+- Dès que la connexion revient, elles partent automatiquement vers le serveur. L'icône 🕒 disparaît, l'effet grisé s'efface.
+- Si une saisie est rejetée par le serveur (par exemple parce qu'un admin vous a retiré du projet entretemps), elle apparaît en rouge avec ⚠️. Vous pouvez la **réessayer** ou la **supprimer**.
+
+La carte **Budget** affiche un cadre en pointillés tant que des saisies sont en attente : c'est un total approximatif (vos changements locaux + dernière valeur connue du serveur). Une fois la synchronisation faite, le cadre redevient plein.
+
+---
+
 ## 7. Installer l'application sur votre téléphone
 
 L'application est une **PWA** : installable comme une application native, fonctionne hors-ligne pour la consultation.

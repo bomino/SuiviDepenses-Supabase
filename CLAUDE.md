@@ -70,6 +70,16 @@ The "Budget" stat card aggregates spent-per-project via the `SECURITY DEFINER` R
 
 A second realtime channel on `public.projects` keeps the card live when admins edit budgets.
 
+### Offline writes go through a mutation router and an IndexedDB queue
+
+Every write (`saveExpense`, `deleteExpense`) goes through `routedWrite(spec, directFn)`. It tries the Supabase call first; if that fails with a **network-level** error (or `navigator.onLine === false`), the op lands in IDB store `pending_ops` (DB `suividepenses_offline`). **Server-level errors (RLS, validation, 5xx) are NOT queued** — they surface inline as today.
+
+Replay is FIFO and triggered by: `window.online` event, window focus, document visibility change, and the realtime channel reaching `SUBSCRIBED`. The replay executor for INSERT uses `upsert(payload, { onConflict: 'client_id' })` so a network blip during the direct attempt that landed the row but lost the response becomes a no-op on retry.
+
+Receipt blobs are queued **inline** on the insert/update op (no separate `upload_receipt` op type). The replay sequence for an insert with a blob is: INSERT → upload to `receipts/<user_id>/<real_id>.<ext>` → UPDATE `receipt_path`.
+
+**Don't add a sync library** (Dexie, RxDB, etc.) — the wrapper is intentionally ~80 lines of raw IndexedDB to match the no-toolchain ethos.
+
 ### `index.html` has two `<script>` blocks on purpose
 
 - `<script type="module">` (around line 400) — only sets up the Supabase client and exposes it as `window.supabase` so the classic script can use it.

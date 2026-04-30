@@ -62,6 +62,7 @@ Open **SQL editor** in the Supabase dashboard (lightning-bolt icon). For each fi
 | 3 | `20260101000003_storage.sql` | Creates the `receipts` storage bucket and its RLS policies (a supervisor can only put/get files under their own UUID prefix). |
 | 4 | `20260101000004_admin_helpers.sql` | Installs `set_user_admin`, `assign_user_project`, `claim_first_admin` RPCs that the admin panel calls. |
 | 5 | `20260430000005_project_budgets.sql` | Adds budget columns to `projects`, the `get_project_summary()` aggregation RPC (SECURITY DEFINER), and adds `projects` to the realtime publication. |
+| 6 | `20260430000006_expense_client_id.sql` | Adds `expenses.client_id` + unique partial index for offline INSERT idempotency. |
 
 Each migration is **idempotent** (uses `if not exists` and `on conflict`), so re-running them is safe.
 
@@ -190,6 +191,18 @@ If all 8 pass, you're production-ready.
 5. Sign in (different browser) as a supervisor on that project. Their card shows the same totals.
 6. **Cross-supervisor accuracy** — sign in as a second supervisor on the same project. Each adds 200/500 respectively. Both cards show `700 / 1000`, not just their own subtotal. (Validates the SECURITY DEFINER RPC.)
 7. **Live budget edit** — open admin and supervisor in two browsers. Admin edits the budget. Supervisor's card updates within ~1s without reload.
+
+### 9.y Offline writes (post-Phase-2)
+
+1. DevTools → Application → Service workers → check "Offline" (or Network tab → Offline).
+2. Add 5 expenses via the form. Each row appears faded with 🕒. Pill reads `Hors ligne (5 en attente)`.
+3. Uncheck Offline. Rows settle (full opacity, no clock) within ~1s. Pill returns to `En ligne`.
+4. Add an expense with a receipt photo while offline. Toggle online. Receipt uploads after the row sync completes.
+5. While offline, edit an existing expense. Optimistic update visible. Settles on reconnect.
+6. While offline, delete an expense. Row vanishes. Stays gone after reconnect.
+7. While offline, in another browser as admin, edit the row that user A is editing offline. User A reconnects → user A's edit wins (last-write-wins; expected).
+8. Demote a user (admin → set is_admin=false on their profile) and unassign their project mid-offline-session, then have them replay. Rejected ops surface with ⚠️ and a Retry option.
+9. Force-quit the browser tab while ops are queued. Re-open. Queue persists, drains on reconnect.
 
 ---
 

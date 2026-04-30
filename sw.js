@@ -1,4 +1,4 @@
-const CACHE = 'expenses-supabase-v2-budgets';
+const CACHE = 'expenses-supabase-v3-offline';
 const ASSETS = [
   './',
   './index.html',
