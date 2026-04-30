@@ -1823,7 +1823,8 @@ async function adminInviteUser(ev) {
   var btn = document.getElementById('adminInviteBtn');
   btn.disabled = true;
   try {
-    var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email } });
+    var redirectTo = window.location.origin + window.location.pathname;
+    var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email, redirectTo: redirectTo } });
     if (error) { setAdminError(error.message || t('adminInviteFailed')); return; }
     if (data && data.error) { setAdminError(data.error); return; }
     input.value = '';

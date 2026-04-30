@@ -45,7 +45,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // 3. Body
-  let body: { email?: string };
+  let body: { email?: string; redirectTo?: string };
   try {
     body = await req.json();
   } catch {
@@ -55,6 +55,9 @@ Deno.serve(async (req: Request) => {
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return jsonResponse({ error: "Invalid email" }, 400);
   }
+  const redirectTo = typeof body.redirectTo === "string" && body.redirectTo
+    ? body.redirectTo
+    : null;
 
   // 4. Verify caller is admin via the REST API, scoped by the caller's JWT.
   // Existing profiles_select policy lets every authenticated user read profiles,
@@ -93,7 +96,12 @@ Deno.serve(async (req: Request) => {
   }
 
   // 5. Send the invite using the service-role key against the GoTrue admin API.
-  const inviteRes = await fetch(`${SUPABASE_URL}/auth/v1/invite`, {
+  // Pass redirectTo as a query string parameter so the post-acceptance redirect
+  // lands on the deployed app URL (not the bare origin Site URL fallback).
+  const inviteUrl = redirectTo
+    ? `${SUPABASE_URL}/auth/v1/invite?redirect_to=${encodeURIComponent(redirectTo)}`
+    : `${SUPABASE_URL}/auth/v1/invite`;
+  const inviteRes = await fetch(inviteUrl, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
