@@ -440,6 +440,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
 window.supabase = supabase;   // expose for inline onclick handlers below
+// The classic <script> below runs at parse time (before this deferred module),
+// so it cannot touch window.supabase at top level. It defines a __startApp()
+// hook instead. Call it now that window.supabase is ready.
+if (typeof window.__startApp === 'function') window.__startApp();
 </script>
 
 <script>
@@ -920,19 +924,26 @@ function subscribeRealtime() {
     .subscribe();
 }
 
-window.supabase.auth.onAuthStateChange(function(event, _session) {
-  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
-    loadCurrentUser();
-  } else if (event === 'SIGNED_OUT') {
-    currentUser = null; expenses = []; allProjects = []; projectSummary = [];
-    if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
-    if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
-    setStorageMode(false);
-    updateUserUI();
-    render();
-    showLogin();
-  }
-});
+// Module scripts are deferred (run after DOM parse + after this classic script),
+// so window.supabase is undefined here. The module calls __startApp() once it
+// has set window.supabase. Do NOT touch window.supabase at top level — only
+// inside this function.
+function __startApp() {
+  window.supabase.auth.onAuthStateChange(function(event, _session) {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
+      loadCurrentUser();
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null; expenses = []; allProjects = []; projectSummary = [];
+      if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+      if (projectsChannel) { window.supabase.removeChannel(projectsChannel); projectsChannel = null; }
+      setStorageMode(false);
+      updateUserUI();
+      render();
+      showLogin();
+    }
+  });
+}
+window.__startApp = __startApp;
 
 function showLogin() {
   document.getElementById('loginOverlay').classList.remove('hidden');
