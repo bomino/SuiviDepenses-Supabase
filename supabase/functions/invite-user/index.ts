@@ -1,29 +1,17 @@
 // Edge Function: invite-user
 //
 // Lets an authenticated admin send a Supabase invite-by-email to a new user
-// without exposing the service-role key to the browser. The invited user
-// receives a magic-link email; clicking it lets them set a password and log in.
+// without exposing the service-role key to the browser.
 //
-// Authorization model:
-//   1. verify_jwt: true (configured at deploy time) ensures only authenticated
-//      callers reach this code.
-//   2. We then read the caller's profiles row and reject if is_admin is false.
-//   3. Only after both checks do we use the service-role key to invite.
-//
-// Deploy with the following environment variables (Supabase auto-provides them):
-//   - SUPABASE_URL
-//   - SUPABASE_ANON_KEY
-//   - SUPABASE_SERVICE_ROLE_KEY
-//
-// Frontend invocation (already wired in index.html):
-//   await window.supabase.functions.invoke('invite-user', { body: { email } });
+// Implemented with direct fetch calls (no @supabase/supabase-js import) to
+// keep the bundle small and the control flow explicit.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const CORS_HEADERS = {
+const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
+  "Access-Control-Allow-Headers":
+    "authorization, content-type, apikey, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -35,14 +23,28 @@ function jsonResponse(body: unknown, status: number) {
 }
 
 Deno.serve(async (req: Request) => {
+  // 1. CORS preflight — must return BEFORE any body parsing or JWT handling.
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response("ok", { status: 200, headers: CORS_HEADERS });
   }
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  // 1. Parse + validate body
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
+    return jsonResponse({ error: "Server misconfigured (missing env)" }, 500);
+  }
+
+  // 2. Caller's JWT
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return jsonResponse({ error: "Missing authorization header" }, 401);
+  }
+
+  // 3. Body
   let body: { email?: string };
   try {
     body = await req.json();
@@ -54,56 +56,62 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Invalid email" }, 400);
   }
 
-  // 2. Resolve caller identity from the JWT
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return jsonResponse({ error: "Missing authorization header" }, 401);
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    return jsonResponse({ error: "Server misconfigured (missing env)" }, 500);
-  }
-
-  // Caller-scoped client to look up the caller's profile under their JWT.
-  const callerClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { autoRefreshToken: false, persistSession: false },
+  // 4. Verify caller is admin via the REST API, scoped by the caller's JWT.
+  // Existing profiles_select policy lets every authenticated user read profiles,
+  // so the caller's own row is reachable. We then check is_admin.
+  const userInfoRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      "Authorization": authHeader,
+      "apikey": SUPABASE_ANON_KEY,
+    },
   });
-
-  const { data: userData, error: userErr } = await callerClient.auth.getUser();
-  if (userErr || !userData?.user) {
+  if (!userInfoRes.ok) {
+    return jsonResponse({ error: "Unauthenticated" }, 401);
+  }
+  const userInfo = await userInfoRes.json() as { id?: string };
+  const callerId = userInfo.id;
+  if (!callerId) {
     return jsonResponse({ error: "Unauthenticated" }, 401);
   }
 
-  // 3. Check admin status. profiles_select policy lets every authenticated
-  // user read profiles, so the caller's own row is reachable.
-  const { data: profile, error: profErr } = await callerClient
-    .from("profiles")
-    .select("is_admin")
-    .eq("id", userData.user.id)
-    .single();
-  if (profErr || !profile?.is_admin) {
+  const profileRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/profiles?id=eq.${callerId}&select=is_admin`,
+    {
+      headers: {
+        "Authorization": authHeader,
+        "apikey": SUPABASE_ANON_KEY,
+        "Accept": "application/json",
+      },
+    },
+  );
+  if (!profileRes.ok) {
+    return jsonResponse({ error: "Could not load profile" }, 500);
+  }
+  const profileRows = await profileRes.json() as Array<{ is_admin?: boolean }>;
+  if (!profileRows[0]?.is_admin) {
     return jsonResponse({ error: "Admin role required" }, 403);
   }
 
-  // 4. Send the invite using the service-role key. This is the only place
-  // the service-role key touches; it never leaves the function runtime.
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+  // 5. Send the invite using the service-role key against the GoTrue admin API.
+  const inviteRes = await fetch(`${SUPABASE_URL}/auth/v1/invite`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
+      "apikey": SERVICE_ROLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
   });
-
-  const { data: invited, error: inviteErr } = await adminClient.auth.admin
-    .inviteUserByEmail(email);
-  if (inviteErr) {
-    // Common cases: user already exists, rate limit, malformed redirect URL.
-    return jsonResponse({ error: inviteErr.message }, 400);
+  const inviteData = await inviteRes.json().catch(() => ({}));
+  if (!inviteRes.ok) {
+    return jsonResponse(
+      { error: (inviteData as { msg?: string }).msg || "Invite failed" },
+      inviteRes.status,
+    );
   }
 
   return jsonResponse(
-    { ok: true, email, user_id: invited?.user?.id ?? null },
+    { ok: true, email, user_id: (inviteData as { id?: string }).id ?? null },
     200,
   );
 });
