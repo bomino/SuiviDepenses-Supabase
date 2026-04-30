@@ -1049,6 +1049,50 @@ function idbDeleteOp(id) {
   });
 }
 
+/* ─────────── Mutation router ─────────── */
+// Returns { ok: true, data, fromQueue: false } on direct success,
+//         { ok: true, fromQueue: true, op } when queued,
+//         { ok: false, error } on server-level error.
+function isNetworkError(err) {
+  if (!err) return false;
+  // Supabase-js wraps fetch errors. Distinguish them from PostgrestError (which has `code`/`status`).
+  if (err.code || err.status) return false;
+  if (err.message && /Failed to fetch|NetworkError|TypeError|timeout/i.test(err.message)) return true;
+  return false;
+}
+
+async function tryDirect(fn) {
+  try {
+    var res = await fn();
+    if (res && res.error) return { ok: false, error: res.error };
+    return { ok: true, data: res ? res.data : null };
+  } catch (err) {
+    return { ok: false, error: err };
+  }
+}
+
+async function routedWrite(opSpec, directFn) {
+  // opSpec: { op_type, client_id, target_id?, payload?, blob?, mime?, ext? }
+  // If navigator.onLine is explicitly false, skip the direct attempt.
+  if (navigator.onLine !== false) {
+    var direct = await tryDirect(directFn);
+    if (direct.ok) return { ok: true, data: direct.data, fromQueue: false };
+    if (!isNetworkError(direct.error)) {
+      // Server-level error (RLS, validation, 5xx) — surface, do not queue.
+      return { ok: false, error: direct.error };
+    }
+    // Network error → fall through to queueing.
+  }
+  var op = Object.assign({
+    created_at: new Date().toISOString(),
+    attempts: 0,
+    last_error: null
+  }, opSpec);
+  var id = await idbAddOp(op);
+  op.id = id;
+  return { ok: true, fromQueue: true, op: op };
+}
+
 /* ─────────── expense CRUD ─────────── */
 async function saveExpense() {
   var desc = document.getElementById('desc').value.trim();
