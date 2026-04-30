@@ -50,6 +50,8 @@ Authorization model used by RLS: **admin sees/mutates everything; supervisor onl
 
 Admin-only mutations (promote/demote a user, assign a user to a project) are implemented as `SECURITY DEFINER` functions in `_admin_helpers.sql` and called via `supabase.rpc('set_user_admin', ...)` / `supabase.rpc('assign_user_project', ...)`. The functions check `is_admin(auth.uid())` themselves. Don't try to replicate these by direct UPDATEs on `profiles` from the client — RLS will (correctly) reject them.
 
+**Inviting new users** is the one operation that *cannot* be done via a Postgres function — `auth.admin.inviteUserByEmail()` is part of the GoTrue HTTPS API and requires the service-role key. So `supabase/functions/invite-user/index.ts` is the project's only Edge Function: it verifies the caller is admin (via their JWT + the `profiles.is_admin` flag) and only then uses the auto-provided `SUPABASE_SERVICE_ROLE_KEY` env var to send the invite. The service-role key never touches the browser. The frontend calls it via `supabase.functions.invoke('invite-user', { body: { email } })`. If you ever need to add another admin operation that requires service-role privilege, follow this same pattern (verify JWT, check admin in `profiles`, then use service-role) — don't put service-role anywhere else.
+
 ### First-admin bootstrap is silent and idempotent
 
 On every successful login, the frontend calls `supabase.rpc('claim_first_admin')`. The function promotes the caller **only if zero admins exist**, otherwise returns false. This avoids a chicken-and-egg setup step but is safe to leave in production. If you change auth/login flow, keep this call (search for `claim_first_admin` in `index.html`).

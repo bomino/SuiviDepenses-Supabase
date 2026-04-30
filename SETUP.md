@@ -155,6 +155,37 @@ Whichever host you pick, **update the Site URL and Redirect URLs in Supabase** t
 
 ---
 
+## 7.5 Deploy the `invite-user` Edge Function
+
+The admin panel's "Invite by email" feature relies on a Supabase Edge Function that wraps the privileged `auth.admin.inviteUserByEmail()` call. Source lives at `supabase/functions/invite-user/index.ts`.
+
+### Option A — Deploy via Supabase dashboard (no CLI install)
+
+1. Supabase dashboard → **Edge Functions** → **Deploy a new function**.
+2. Name: `invite-user` (must match exactly).
+3. Paste the entire contents of `supabase/functions/invite-user/index.ts` into the editor.
+4. Verify "Verify JWT" is **ON** (default; required for the auth check inside the function).
+5. Click **Deploy function**.
+
+The function automatically gets the env vars `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` from the project — no Vault setup required.
+
+### Option B — Deploy via Supabase CLI
+
+```bash
+npx supabase functions deploy invite-user --project-ref <your-project-ref>
+```
+
+### Verify
+
+In the dashboard's Edge Functions list, `invite-user` should show **Status: Active**. In the app's admin panel, the "Invite" form should now work end-to-end (admin enters an email, recipient gets a magic-link email).
+
+If it fails:
+- **403 Admin role required** → the calling user isn't admin (run the `claim_first_admin` SQL or set `is_admin = true` manually).
+- **400 with "User already registered"** → the email is already on file; you can't re-invite an existing user.
+- Check **Logs → Edge Functions** in the dashboard for the full error.
+
+---
+
 ## 8. Bootstrap the first admin
 
 There's no manual setup step — the very first sign-up auto-promotes:

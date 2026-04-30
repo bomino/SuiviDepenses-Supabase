@@ -406,7 +406,11 @@
     <div class="admin-user-list" id="adminProjectList"></div>
 
     <div class="admin-section-title" id="adminUsersTitle">Users</div>
-    <p style="font-size:.75rem;color:var(--sub);margin-top:-6px;margin-bottom:10px" id="adminUsersHelp">Users sign up themselves on the login screen. Use the dropdowns below to assign each user to a project, promote/demote, or remove.</p>
+    <p style="font-size:.75rem;color:var(--sub);margin-top:-6px;margin-bottom:10px" id="adminUsersHelp">Invite a new user by email below — they receive a magic-link to set a password. Once they appear in the list, assign them to a project.</p>
+    <form class="admin-add-form" onsubmit="adminInviteUser(event)">
+      <input type="email" id="inviteEmail" placeholder="user@example.com" required autocomplete="email">
+      <button type="submit" class="admin-create-btn" id="adminInviteBtn">Invite</button>
+    </form>
     <div class="admin-user-list" id="adminUserList"></div>
     <div class="login-error" id="adminError"></div>
   </div>
@@ -491,6 +495,10 @@ var dict = {
     adminBudgetSave: "Save",
     adminBudgetSaved: "Budget saved",
     adminBudgetInvalid: "Invalid budget",
+    adminInviteBtn: "Invite",
+    adminInviteSent: "Invitation sent",
+    adminInviteFailed: "Invite failed",
+    adminInviteEmailRequired: "Email is required",
     budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
@@ -524,7 +532,7 @@ var dict = {
     logoutBtn: "Logout",
     adminBtn: "Manage Users", adminTitle: "Manage Users",
     adminProjectsTitle: "Projects", adminUsersTitle: "Users",
-    adminUsersHelp: "Users sign up themselves on the login screen. Use the dropdowns below to assign each user to a project, promote/demote, or remove.",
+    adminUsersHelp: "Invite a new user by email below — they receive a magic-link to set a password. Once they appear in the list, assign them to a project.",
     newProjectName: "Project name", adminAddProjectBtn: "Add Project",
     adminProjectCreated: "Project added", adminProjectCreateFailed: "Could not add project",
     adminProjectNameRequired: "Project name required",
@@ -556,6 +564,10 @@ var dict = {
     adminBudgetSave: "Enregistrer",
     adminBudgetSaved: "Budget enregistré",
     adminBudgetInvalid: "Budget invalide",
+    adminInviteBtn: "Inviter",
+    adminInviteSent: "Invitation envoyée",
+    adminInviteFailed: "Échec de l'invitation",
+    adminInviteEmailRequired: "L'e-mail est requis",
     budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
@@ -590,7 +602,7 @@ var dict = {
     logoutBtn: "Déconnexion",
     adminBtn: "Gérer les utilisateurs", adminTitle: "Gérer les utilisateurs",
     adminProjectsTitle: "Projets", adminUsersTitle: "Utilisateurs",
-    adminUsersHelp: "Les utilisateurs s'inscrivent eux-mêmes via l'écran de connexion. Utilisez les menus ci-dessous pour les affecter à un projet, les promouvoir/rétrograder ou les supprimer.",
+    adminUsersHelp: "Invitez un nouvel utilisateur par e-mail ci-dessous — il recevra un lien magique pour définir un mot de passe. Une fois qu'il apparaît dans la liste, affectez-le à un projet.",
     newProjectName: "Nom du projet", adminAddProjectBtn: "Ajouter un projet",
     adminProjectCreated: "Projet ajouté", adminProjectCreateFailed: "Échec de l'ajout du projet",
     adminProjectNameRequired: "Nom du projet requis",
@@ -692,6 +704,7 @@ function applyLang() {
   setText('adminProjectsTitle', d.adminProjectsTitle);
   setText('adminUsersTitle', d.adminUsersTitle);
   setText('adminUsersHelp', d.adminUsersHelp);
+  setText('adminInviteBtn', d.adminInviteBtn);
   setText('adminAddProjectBtn', d.adminAddProjectBtn);
   document.getElementById('newProjectName').placeholder = d.newProjectName;
 
@@ -1796,6 +1809,29 @@ async function adminToggleAdmin(uid, makeAdmin) {
   toast(makeAdmin ? t('adminPromoted') : t('adminDemoted'));
 }
 window.adminToggleAdmin = adminToggleAdmin;
+
+async function adminInviteUser(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  setAdminError('');
+  var input = document.getElementById('inviteEmail');
+  var email = (input.value || '').trim().toLowerCase();
+  if (!email) { setAdminError(t('adminInviteEmailRequired')); return; }
+  var btn = document.getElementById('adminInviteBtn');
+  btn.disabled = true;
+  try {
+    var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email } });
+    if (error) { setAdminError(error.message || t('adminInviteFailed')); return; }
+    if (data && data.error) { setAdminError(data.error); return; }
+    input.value = '';
+    refreshAdminUserList();
+    toast(t('adminInviteSent'));
+  } catch (e) {
+    setAdminError((e && e.message) || t('adminInviteFailed'));
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.adminInviteUser = adminInviteUser;
 
 /* ─────────── init ─────────── */
 try { currLang = localStorage.getItem('expense-tracker-lang') || 'en'; } catch(e) {}
