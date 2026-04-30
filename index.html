@@ -497,6 +497,7 @@ var dict = {
     filterAllCat: "All Categories", filterAllSt: "All Statuses", filterSearch: "Search...",
     filterFromTitle: "From", filterToTitle: "To",
     toastAdded: "Expense added", toastUpdated: "Expense updated", toastDeleted: "Expense deleted",
+    toastQueued: "Saved offline (will sync)",
     toastCleared: "All expenses cleared", toastNoExport: "Nothing to export", toastCSV: "CSV exported",
     toastRenamed: "Project renamed", toastSaved: "Saved",
     confirmClear: "Delete all visible expenses? This cannot be undone.", confirmDelete: "Delete this expense?",
@@ -559,6 +560,7 @@ var dict = {
     filterAllCat: "Toutes catégories", filterAllSt: "Tous états", filterSearch: "Rechercher...",
     filterFromTitle: "Du", filterToTitle: "Au",
     toastAdded: "Dépense ajoutée", toastUpdated: "Dépense mise à jour", toastDeleted: "Dépense supprimée",
+    toastQueued: "Enregistré hors-ligne (sera synchronisé)",
     toastCleared: "Tout effacé", toastNoExport: "Rien à exporter", toastCSV: "CSV exporté",
     toastRenamed: "Projet renommé", toastSaved: "Enregistré",
     confirmClear: "Supprimer toutes les dépenses visibles ? Irréversible.", confirmDelete: "Supprimer cette dépense ?",
@@ -981,6 +983,17 @@ var IDB_VERSION = 1;
 var IDB_STORE = 'pending_ops';
 var idbConn = null;
 
+function uuidv4() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  // RFC4122 v4 polyfill via getRandomValues (universally supported)
+  var b = new Uint8Array(16);
+  window.crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  var h = []; for (var i = 0; i < 16; i++) h.push((b[i] + 0x100).toString(16).slice(1));
+  return h.slice(0,4).join('') + '-' + h.slice(4,6).join('') + '-' + h.slice(6,8).join('') + '-' + h.slice(8,10).join('') + '-' + h.slice(10,16).join('');
+}
+
 function idbOpen() {
   if (idbConn) return Promise.resolve(idbConn);
   return new Promise(function(resolve, reject) {
@@ -1117,17 +1130,55 @@ async function saveExpense() {
     payload.user_id = currentUser.id;
     payload.project_id = currentUser.project_id;  /* admins without a project can't add via UI; assign yourself first */
     if (!payload.project_id) { toast(t('noProjectMsg')); return; }
-    var { data, error } = await window.supabase.from('expenses').insert(payload).select().single();
-    if (error) { toast(error.message); return; }
-    if (file) await uploadReceipt(data.id, file);
+    var clientId = uuidv4();
+    payload.client_id = clientId;
+
+    var spec = {
+      op_type: 'insert',
+      client_id: clientId,
+      payload: payload,
+      blob: file || null,
+      mime: file ? file.type : null,
+      ext: file ? (file.name.split('.').pop() || 'jpg').toLowerCase() : null
+    };
+    var res = await routedWrite(spec, function() {
+      return window.supabase.from('expenses').upsert(payload, { onConflict: 'client_id', ignoreDuplicates: false }).select().single();
+    });
+    if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+    if (res.fromQueue) {
+      // Optimistic local row
+      expenses.unshift(Object.assign({ id: '__local_' + clientId, _pending: true, _client_id: clientId }, payload));
+    } else if (file && res.data && res.data.id) {
+      await uploadReceipt(res.data.id, file);
+    }
     cancelEdit();
-    toast(t('toastAdded'));
+    render();
+    if (!res.fromQueue) debouncedRefetchSummary();
+    toast(res.fromQueue ? t('toastQueued') : t('toastAdded'));
   } else {
-    var { error } = await window.supabase.from('expenses').update(payload).eq('id', editId);
-    if (error) { toast(error.message); return; }
-    if (file) await uploadReceipt(editId, file);
+    var spec = {
+      op_type: 'update',
+      client_id: uuidv4(),
+      target_id: editId,
+      payload: payload,
+      blob: file || null,
+      mime: file ? file.type : null,
+      ext: file ? (file.name.split('.').pop() || 'jpg').toLowerCase() : null
+    };
+    var res = await routedWrite(spec, function() {
+      return window.supabase.from('expenses').update(payload).eq('id', editId);
+    });
+    if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+    if (res.fromQueue) {
+      var idx = expenses.findIndex(function(e){ return e.id === editId; });
+      if (idx >= 0) expenses[idx] = Object.assign({}, expenses[idx], payload, { _pending: true, _client_id: spec.client_id });
+    } else if (file) {
+      await uploadReceipt(editId, file);
+    }
     cancelEdit();
-    toast(t('toastUpdated'));
+    render();
+    if (!res.fromQueue) debouncedRefetchSummary();
+    toast(res.fromQueue ? t('toastQueued') : t('toastUpdated'));
   }
 }
 window.saveExpense = saveExpense;
@@ -1189,11 +1240,26 @@ window.cancelEdit = cancelEdit;
 async function deleteExpense(id) {
   if (!confirm(t('confirmDelete'))) return;
   var e = expenses.find(function(x){ return x.id === id; });
-  if (e && e.receipt_path) await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
-  var { error } = await window.supabase.from('expenses').delete().eq('id', id);
-  if (error) { toast(error.message); return; }
+  var spec = {
+    op_type: 'delete',
+    client_id: uuidv4(),
+    target_id: id,
+    payload: null,
+    blob: null
+  };
+  var res = await routedWrite(spec, async function() {
+    if (e && e.receipt_path) {
+      await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
+    }
+    return window.supabase.from('expenses').delete().eq('id', id);
+  });
+  if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
+  // Remove locally either way
+  expenses = expenses.filter(function(x){ return x.id !== id; });
   if (document.getElementById('editId').value === id) cancelEdit();
-  toast(t('toastDeleted'));
+  render();
+  if (!res.fromQueue) debouncedRefetchSummary();
+  toast(res.fromQueue ? t('toastQueued') : t('toastDeleted'));
 }
 window.deleteExpense = deleteExpense;
 
