@@ -61,6 +61,7 @@ Open **SQL editor** in the Supabase dashboard (lightning-bolt icon). For each fi
 | 2 | `20260101000002_rls.sql` | Enables RLS on every table and installs the policies (admins see all, supervisors see only their own project's rows). |
 | 3 | `20260101000003_storage.sql` | Creates the `receipts` storage bucket and its RLS policies (a supervisor can only put/get files under their own UUID prefix). |
 | 4 | `20260101000004_admin_helpers.sql` | Installs `set_user_admin`, `assign_user_project`, `claim_first_admin` RPCs that the admin panel calls. |
+| 5 | `20260430000005_project_budgets.sql` | Adds budget columns to `projects`, the `get_project_summary()` aggregation RPC (SECURITY DEFINER), and adds `projects` to the realtime publication. |
 
 Each migration is **idempotent** (uses `if not exists` and `on conflict`), so re-running them is safe.
 
@@ -179,6 +180,16 @@ Run through this checklist as the first admin:
 8. As the supervisor, try to access another project's data via DevTools → Network: the response should be empty (RLS blocks it).
 
 If all 8 pass, you're production-ready.
+
+### 9.x Budget feature (post-Phase-1)
+
+1. As admin, **Manage Users → Projects**: set Budget=1000, Alert=80 on a project. Toast confirms.
+2. On the home screen the new Budget card shows `0 / 1000` in green.
+3. Add expenses summing to 800. The bar turns amber.
+4. Add expenses past 1000. The bar turns red; "Dépassement" label appears.
+5. Sign in (different browser) as a supervisor on that project. Their card shows the same totals.
+6. **Cross-supervisor accuracy** — sign in as a second supervisor on the same project. Each adds 200/500 respectively. Both cards show `700 / 1000`, not just their own subtotal. (Validates the SECURITY DEFINER RPC.)
+7. **Live budget edit** — open admin and supervisor in two browsers. Admin edits the budget. Supervisor's card updates within ~1s without reload.
 
 ---
 

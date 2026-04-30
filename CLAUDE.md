@@ -64,6 +64,12 @@ Receipts are private; the UI fetches them with `createSignedUrl(path, 60)` (60-s
 
 `subscribeRealtime()` in `index.html` opens one channel on `public.expenses`, and a single `postgres_changes` handler dispatches INSERT/UPDATE/DELETE into the local `expenses` array. RLS already filters what the channel delivers, so the handler doesn't re-check authorization. If you add a new table that needs live updates, you must also add `alter publication supabase_realtime add table public.<name>;` (mirrors the line at the bottom of `_schema.sql`).
 
+### Burn-rate goes through `get_project_summary()`, not client-side SUM
+
+The "Budget" stat card aggregates spent-per-project via the `SECURITY DEFINER` RPC `get_project_summary()` in `_project_budgets.sql`. **Do not replace this with `SELECT SUM(amount) FROM expenses`** — RLS would hide other supervisors' rows from the calling supervisor and the card would silently undercount. The function bypasses RLS for the aggregation but enforces authorization (admin OR caller's assigned project) inside the body.
+
+A second realtime channel on `public.projects` keeps the card live when admins edit budgets.
+
 ### `index.html` has two `<script>` blocks on purpose
 
 - `<script type="module">` (around line 400) — only sets up the Supabase client and exposes it as `window.supabase` so the classic script can use it.
