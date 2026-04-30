@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+# Triggers:
+#   - push to main: every merge to main deploys
+#   - workflow_dispatch: manual re-run from the Actions tab
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Permissions required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one in-flight deploy at a time; cancel queued runs to keep the
+# active deploy current.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage runtime files
+        # Copies only what the PWA actually serves. Everything else (planning
+        # docs, SQL migrations, human-facing markdown, tooling configs) stays
+        # out of the deployed artifact.
+        run: |
+          mkdir -p dist/icons
+          cp index.html manifest.json sw.js dist/
+          cp -r icons/. dist/icons/
+          ls -la dist/
+
+      - name: Inject build version into sw.js
+        # Replaces the __VERSION__ placeholder with the short Git SHA so the
+        # service worker cache key changes on every commit, forcing returning
+        # users to pick up the new build on next visit.
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          sed -i "s/__VERSION__/${SHORT_SHA}/g" dist/sw.js
+          echo "Cache version: ${SHORT_SHA}"
+          grep -n "CACHE = " dist/sw.js
+
+      - name: Configure Pages
+        # enablement: true auto-flips the Pages source to "GitHub Actions" on
+        # the first run, so no one-time manual UI step is required.
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -129,11 +129,15 @@ Open http://localhost:8000. The login overlay should appear. If not, check the b
 
 Pick the host you prefer. All of these are free.
 
-### GitHub Pages (zero config)
+### GitHub Pages (recommended — automated via Actions)
 
-1. Push the repo to a public GitHub repository.
-2. Repo → **Settings → Pages** → Source: **Deploy from a branch**, branch: `main`, folder: `/ (root)` → **Save**.
+This repo includes `.github/workflows/deploy.yml`, a workflow that auto-deploys to GitHub Pages on every push to `main`.
+
+1. Push the repo to a GitHub repository (public or private — Pages works for both on free tier with public repos, paid for private).
+2. The first push to `main` runs the workflow, which auto-enables Pages with **Source: GitHub Actions** (no manual UI step needed).
 3. URL becomes `https://<your-username>.github.io/<repo-name>/`. Add it to Supabase **Auth → URL Configuration → Site URL & Redirect URLs**.
+
+The workflow also injects the short Git SHA into `sw.js`'s `CACHE` constant at deploy time, so returning users automatically pick up new builds on their next visit. Do not edit the `__VERSION__` placeholder in `sw.js` — leave it as-is.
 
 ### Vercel (drag-and-drop)
 

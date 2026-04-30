@@ -28,7 +28,7 @@ with the values from the Supabase dashboard → Project Settings → API.
 
 **Applying migrations**: open the Supabase SQL editor and paste each `supabase/migrations/*.sql` file in filename order. There is no `supabase` CLI workflow here. Migrations are idempotent (`if not exists`, `on conflict`, `drop policy if exists`) so re-running is safe.
 
-**Pushing a new frontend version to clients**: bump `CACHE = 'expenses-supabase-v1'` in `sw.js` to a new value. The service worker only refreshes cached assets when this string changes — without a bump, returning users keep seeing the old build.
+**Pushing a new frontend version to clients**: handled automatically. The `.github/workflows/deploy.yml` workflow runs on every push to `main`, replaces the `__VERSION__` placeholder in `sw.js` with the short Git SHA, and deploys to GitHub Pages at `https://bomino.github.io/SuiviDepenses-Supabase/`. Returning users get the new build on next visit because the cache key changed. **Do not hardcode a real value into `sw.js`** — keep the `__VERSION__` placeholder; CI substitutes at deploy time. For local dev (`http.server` etc.) the placeholder is fine as a literal — it just acts as a stable cache key.
 
 ## Architecture (the bits that span files)
 
