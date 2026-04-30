@@ -107,6 +107,10 @@
   .badge-paid    { background: var(--green-bg); color: var(--green); }
   .badge-pending { background: var(--amber-bg); color: var(--amber); }
   .badge-unpaid  { background: var(--red-bg);   color: var(--red); }
+  tr.row-pending { opacity: 0.55; }
+  tr.row-pending td { font-style: italic; }
+  tr.row-rejected { background: rgba(239,68,68,.08); }
+  tr.row-rejected td { color: var(--red); }
   .row-actions { display: flex; gap: 6px; }
   .icon-btn { background: transparent; border: 1px solid var(--border); color: var(--sub); width: 30px; height: 30px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; font-family: inherit; }
   .icon-btn:hover { color: var(--text); border-color: var(--text); }
@@ -353,6 +357,7 @@
             <th id="thStatus">Status</th>
             <th id="thNotes">Notes</th>
             <th id="thReceipt">Receipt</th>
+            <th id="thSync">Sync</th>
             <th></th>
           </tr>
         </thead>
@@ -489,7 +494,7 @@ var dict = {
     saveBtnAdd: "Add", saveBtnUpdate: "Update", cancelBtn: "Cancel",
     allExpensesLabel: "All Expenses", emptyMsg: "No expenses yet. Add one above.",
     thDate: "Date", thDesc: "Description", thCat: "Category", thAmt: "Amount", thPaidBy: "Paid By",
-    thStatus: "Status", thNotes: "Notes", thReceipt: "Receipt",
+    thStatus: "Status", thNotes: "Notes", thReceipt: "Receipt", thSync: "Sync",
     resetBtn: "Reset", clearBtn: "Clear All", exportBtn: "Export",
     catMaterials: "Materials", catLabor: "Labor", catEquipment: "Equipment", catPermits: "Permits",
     catSubs: "Subcontractors", catTransport: "Transport", catUtilities: "Utilities", catMisc: "Misc",
@@ -501,6 +506,7 @@ var dict = {
     toastCleared: "All expenses cleared", toastNoExport: "Nothing to export", toastCSV: "CSV exported",
     toastRenamed: "Project renamed", toastSaved: "Saved",
     confirmClear: "Delete all visible expenses? This cannot be undone.", confirmDelete: "Delete this expense?",
+    confirmDiscardPending: "Discard this pending change?",
     promptRename: "Project name:", valMsg: "A description and valid amount are required.",
     editTitle: "Edit", deleteTitle: "Delete",
     installMsg: "Install for quick access", installBtn: "Install", dismissBtn: "Dismiss",
@@ -552,7 +558,7 @@ var dict = {
     saveBtnAdd: "Ajouter", saveBtnUpdate: "Mettre à jour", cancelBtn: "Annuler",
     allExpensesLabel: "Toutes les dépenses", emptyMsg: "Aucune dépense. Ajoutez-en une.",
     thDate: "Date", thDesc: "Description", thCat: "Catégorie", thAmt: "Montant", thPaidBy: "Payé par",
-    thStatus: "État", thNotes: "Remarques", thReceipt: "Reçu",
+    thStatus: "État", thNotes: "Remarques", thReceipt: "Reçu", thSync: "Sync",
     resetBtn: "Réinitialiser", clearBtn: "Tout effacer", exportBtn: "Exporter",
     catMaterials: "Matériaux", catLabor: "Main-d’œuvre", catEquipment: "Équipement",
     catPermits: "Permis", catSubs: "Sous-traitants", catTransport: "Transport", catUtilities: "Services", catMisc: "Divers",
@@ -564,6 +570,7 @@ var dict = {
     toastCleared: "Tout effacé", toastNoExport: "Rien à exporter", toastCSV: "CSV exporté",
     toastRenamed: "Projet renommé", toastSaved: "Enregistré",
     confirmClear: "Supprimer toutes les dépenses visibles ? Irréversible.", confirmDelete: "Supprimer cette dépense ?",
+    confirmDiscardPending: "Annuler cette modification en attente ?",
     promptRename: "Nom du projet :", valMsg: "Une description et un montant valide sont requis.",
     editTitle: "Modifier", deleteTitle: "Supprimer",
     installMsg: "Installer pour un accès rapide", installBtn: "Installer", dismissBtn: "Ignorer",
@@ -648,6 +655,7 @@ function applyLang() {
   setText('thStatus', d.thStatus);
   setText('thNotes', d.thNotes);
   setText('thReceipt', d.thReceipt);
+  setText('thSync', d.thSync);
   setText('resetBtn', d.resetBtn);
   setText('clearBtn', d.clearBtn);
   setText('exportBtn', d.exportBtn);
@@ -1142,6 +1150,15 @@ async function replayQueue() {
         });
       }
     }
+    // Mark any rows whose ops failed (last_error set) as rejected
+    var afterOps = await idbListOps();
+    var rejectedClientIds = afterOps.filter(function(o){ return o.last_error; }).map(function(o){ return o.client_id; });
+    expenses.forEach(function(e) {
+      if (e._client_id && rejectedClientIds.indexOf(e._client_id) >= 0) {
+        e._rejected = true;
+        e._pending = false;
+      }
+    });
     // Refresh the summary after a drain
     await loadProjectSummary();
     render();
@@ -1203,6 +1220,32 @@ function updateSyncIndicator() {
   // Placeholder — Task 14 implements the visible counter
   if (typeof renderSyncCounter === 'function') renderSyncCounter();
 }
+
+async function retryPendingOp(clientId) {
+  if (!clientId) return;
+  var ops = await idbListOps();
+  var op = ops.find(function(o){ return o.client_id === clientId; });
+  if (!op) return;
+  await idbUpdateOp(op.id, { last_error: null });
+  // Also clear the _rejected flag locally so the row no longer shows as red while replay attempts
+  var idx = expenses.findIndex(function(e){ return e._client_id === clientId; });
+  if (idx >= 0) { expenses[idx]._rejected = false; expenses[idx]._pending = true; }
+  render();
+  replayQueue();
+}
+window.retryPendingOp = retryPendingOp;
+
+async function discardPendingOp(clientId) {
+  if (!clientId) return;
+  if (!confirm(t('confirmDiscardPending') || 'Discard this pending change?')) return;
+  var ops = await idbListOps();
+  var op = ops.find(function(o){ return o.client_id === clientId; });
+  if (op) await idbDeleteOp(op.id);
+  // Remove the optimistic row from the local cache
+  expenses = expenses.filter(function(e){ return e._client_id !== clientId; });
+  render();
+}
+window.discardPendingOp = discardPendingOp;
 
 /* ─────────── Reconnect triggers ─────────── */
 window.addEventListener('online', function() { replayQueue(); });
@@ -1492,7 +1535,17 @@ function render() {
     var receipt = e.receipt_path
       ? '<button type="button" class="receipt-link" onclick="openReceipt(\'' + escAttr(e.receipt_path) + '\')" title="' + t('receiptOpen') + '">📎</button>'
       : t('receiptNone');
-    return '<tr>' +
+    var rowClass = '';
+    if (e._pending) rowClass = 'row-pending';
+    if (e._rejected) rowClass = 'row-rejected';
+    var syncCell;
+    if (e._pending) syncCell = '<span title="Pending sync">🕒</span>';
+    else if (e._rejected) {
+      syncCell = '<button class="icon-btn" onclick="retryPendingOp(\'' + escAttr(e._client_id || '') + '\')" title="Retry">⚠️</button>'
+               + '<button class="icon-btn danger" onclick="discardPendingOp(\'' + escAttr(e._client_id || '') + '\')" title="Discard">✕</button>';
+    } else syncCell = '';
+
+    return '<tr class="' + rowClass + '">' +
       '<td data-label="' + d.thDate + '">' + esc(e.date || '—') + '</td>' +
       '<td data-label="' + d.thDesc + '">' + esc(e.description || '') + '</td>' +
       '<td data-label="' + d.thCat  + '">' + displayCat(e.category) + '</td>' +
@@ -1501,6 +1554,7 @@ function render() {
       '<td data-label="' + d.thStatus + '">' + badge(e.status) + '</td>' +
       '<td class="notes-cell" data-label="' + d.thNotes + '" title="' + escAttr(e.notes || '') + '">' + (e.notes ? esc(e.notes) : '—') + '</td>' +
       '<td data-label="' + d.thReceipt + '">' + receipt + '</td>' +
+      '<td data-label="' + d.thSync + '">' + syncCell + '</td>' +
       '<td class="actions-cell"><div class="row-actions">' +
         '<button class="icon-btn" onclick="editExpense(\'' + escAttr(e.id) + '\')" title="' + et + '">✎</button>' +
         '<button class="icon-btn danger" onclick="deleteExpense(\'' + escAttr(e.id) + '\')" title="' + dt + '">✕</button>' +
