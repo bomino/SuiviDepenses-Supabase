@@ -9,6 +9,9 @@
 .DS_Store
 Thumbs.db
 
+# Claude Code per-user settings (project-shared settings.json may be committed)
+.claude/settings.local.json
+
 # Railway / Heroku log exports
 logs*.json
 
