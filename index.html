@@ -1204,8 +1204,9 @@ async function replayOne(op) {
     return;
   }
   if (op.op_type === 'update') {
-    var upd = await window.supabase.from('expenses').update(op.payload).eq('id', op.target_id);
+    var upd = await window.supabase.from('expenses').update(op.payload).eq('id', op.target_id).select();
     if (upd.error) throw upd.error;
+    if (!upd.data || upd.data.length === 0) throw new Error('Update affected 0 rows (likely RLS rejection or row deleted)');
     if (op.blob) {
       var path = currentUser.id + '/' + op.target_id + '.' + (op.ext || 'jpg');
       var up = await window.supabase.storage.from('receipts').upload(path, op.blob, { upsert: true, contentType: op.mime || 'image/jpeg' });
@@ -1221,8 +1222,13 @@ async function replayOne(op) {
     if (existing && existing.receipt_path) {
       await window.supabase.storage.from('receipts').remove([existing.receipt_path]).catch(function(){});
     }
-    var del = await window.supabase.from('expenses').delete().eq('id', op.target_id);
+    var del = await window.supabase.from('expenses').delete().eq('id', op.target_id).select();
     if (del.error) throw del.error;
+    if (!del.data || del.data.length === 0) {
+      // No rows deleted: row was already gone (idempotent) OR RLS blocked it. We
+      // treat this as success — either way there's nothing to remove server-side.
+      return;
+    }
     return;
   }
   throw new Error('Unknown op_type: ' + op.op_type);
@@ -1413,7 +1419,10 @@ async function deleteExpense(id) {
     return window.supabase.from('expenses').delete().eq('id', id);
   });
   if (!res.ok) { toast((res.error && res.error.message) || 'Error'); return; }
-  // Remove locally either way
+  // Remove locally either way.
+  // TODO(offline): if `fromQueue` and the replay later rejects, the user has
+  // no UI affordance to retry — the row is gone from `expenses`. Future fix:
+  // mark-and-hide instead of removing, so rejection can resurface the row.
   expenses = expenses.filter(function(x){ return x.id !== id; });
   if (document.getElementById('editId').value === id) cancelEdit();
   render();

@@ -80,6 +80,8 @@ Receipt blobs are queued **inline** on the insert/update op (no separate `upload
 
 **Don't add a sync library** (Dexie, RxDB, etc.) — the wrapper is intentionally ~80 lines of raw IndexedDB to match the no-toolchain ethos.
 
+**Known limitation:** offline DELETE removes the row locally immediately for good UX. If the replay is later rejected (RLS, e.g. user demoted mid-session), the rejected op stays in IDB but there's no UI affordance to surface it — the user can only see it via DevTools. Future fix is mark-and-hide instead of removal. See `// TODO(offline)` in `deleteExpense`.
+
 ### `index.html` has two `<script>` blocks on purpose
 
 - `<script type="module">` (around line 400) — only sets up the Supabase client and exposes it as `window.supabase` so the classic script can use it.
