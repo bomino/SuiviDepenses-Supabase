@@ -36,33 +36,28 @@ Saisir, classer et suivre toutes les dépenses d'un ou plusieurs chantiers — m
 
 ---
 
-## 2. Premiers pas — créer un compte et se connecter
+## 2. Premiers pas — recevoir une invitation et se connecter
 
-À la différence de la version Tier 2, **vous créez votre compte vous-même** ; il n'y a pas de mot de passe à demander à un admin.
+L'accès à l'application est **sur invitation uniquement**. Vous ne pouvez pas créer un compte vous-même : votre administrateur vous envoie un lien d'invitation par e-mail.
 
-### 2.1 Créer un compte
+### 2.1 Accepter l'invitation
 
-1. Ouvrez l'URL de l'application (fournie par votre administrateur).
-2. Sur l'écran de connexion, cliquez sur l'onglet **Inscription**.
-3. Saisissez votre **e-mail** et un **mot de passe** (minimum 6 caractères).
-4. Cliquez sur **Créer un compte**.
-5. *(Selon la configuration)* Vérifiez votre boîte mail et cliquez sur le lien de confirmation.
-6. Revenez sur l'écran de connexion, onglet **Connexion**, et entrez vos identifiants.
+1. Votre administrateur vous invite via le panneau **Gérer les utilisateurs**. Vous recevez un e-mail intitulé *« You have been invited »* (ou similaire).
+2. Cliquez sur le lien dans l'e-mail. Vous arrivez sur l'application avec un écran **« Bienvenue — choisissez votre mot de passe »**.
+3. Saisissez un mot de passe (minimum 6 caractères) et cliquez sur **Enregistrer le mot de passe**.
+4. Vous êtes connecté(e). À partir de maintenant, vous vous connectez avec votre e-mail et ce mot de passe.
 
-> 📌 **Le tout premier utilisateur** d'une nouvelle installation devient automatiquement admin. Les suivants sont des superviseurs par défaut.
+> 📌 Vous n'avez pas reçu d'e-mail ? Vérifiez le dossier spam, puis demandez à votre administrateur de relancer l'invitation.
 
-### 2.2 Connexion avec lien magique (sans mot de passe)
+### 2.2 Connexion habituelle
 
-Si vous oubliez votre mot de passe, ou si vous préférez ne pas en saisir :
-
-1. Onglet **Lien magique** sur l'écran de connexion.
-2. Saisissez votre e-mail → **Envoyer le lien magique**.
-3. Vous recevez un e-mail avec un bouton de connexion. Cliquez dessus depuis le **même appareil** où vous avez demandé le lien.
-4. Vous êtes connecté(e), sans mot de passe.
+1. Ouvrez l'URL de l'application.
+2. Saisissez votre e-mail et votre mot de passe.
+3. Cliquez sur **Se connecter**.
 
 ### 2.3 Mot de passe oublié
 
-Onglet **Connexion** → bouton **Mot de passe oublié ?** → e-mail → vous recevez un lien pour définir un nouveau mot de passe.
+Sur l'écran de connexion, cliquez sur **Mot de passe oublié ?** → saisissez votre e-mail → vous recevez un lien pour définir un nouveau mot de passe.
 
 ---
 

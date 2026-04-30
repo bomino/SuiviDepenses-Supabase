@@ -375,19 +375,15 @@
   <div class="login-card">
     <h2 id="loginTitle">Sign In</h2>
     <div class="login-sub" id="loginSub">Enter your email and password</div>
-    <div class="login-tabs">
-      <button class="login-tab active" id="tabSignIn" onclick="switchAuthTab('signin')">Sign in</button>
-      <button class="login-tab" id="tabSignUp" onclick="switchAuthTab('signup')">Sign up</button>
-      <button class="login-tab" id="tabMagic" onclick="switchAuthTab('magic')">Magic link</button>
-    </div>
     <form onsubmit="doAuth(event)">
       <input type="email" id="loginEmail" autocomplete="email" placeholder="Email" required>
-      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Password" minlength="6">
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Password" minlength="6" required>
       <button type="submit" class="login-btn" id="loginSubmitBtn">Sign In</button>
     </form>
-    <button type="button" class="login-btn secondary hidden" id="forgotBtn" onclick="doPasswordReset()">Forgot password?</button>
+    <button type="button" class="login-btn secondary" id="forgotBtn" onclick="doPasswordReset()">Forgot password?</button>
     <div class="login-error" id="loginError"></div>
     <div class="login-info hidden" id="loginInfo"></div>
+    <div class="login-sub" id="loginNoAccount" style="margin-top:14px;font-size:.7rem">No account? Ask your admin to invite you.</div>
   </div>
 </div>
 
@@ -469,7 +465,6 @@ var expenses = [];                /* live cache, kept in sync via realtime */
 var allProjects = [];             /* projects the current user can see (admin: all, supervisor: their own) */
 var realtimeChannel = null;
 var deferredPrompt = null;
-var authMode = 'signin';          /* 'signin' | 'signup' | 'magic' */
 var pendingReceiptFile = null;    /* File chosen in the form, applied on save */
 var projectSummary = [];           /* [{ project_id, name, budget_amount, budget_alert_pct, spent, expense_count }] */
 var projectsChannel = null;        /* second realtime channel */
@@ -538,12 +533,12 @@ var dict = {
     installMsg: "Install for quick access", installBtn: "Install", dismissBtn: "Dismiss",
     loginTitle: "Sign In", loginSub: "Email and password",
     loginEmail: "Email", loginPassword: "Password (min 6)", loginSubmitSignIn: "Sign In",
-    loginSubmitSignUp: "Create account", loginSubmitMagic: "Send magic link",
-    loginTabSignIn: "Sign in", loginTabSignUp: "Sign up", loginTabMagic: "Magic link",
     forgotBtn: "Forgot password?", forgotInfo: "Password reset email sent (check your inbox).",
-    magicInfo: "Magic-link email sent — open it on this device.", signupInfo: "Account created. Check your email if confirmation is required.",
+    loginNoAccount: "No account? Ask your admin to invite you.",
     recoveryTitle: "Set a new password",
     recoverySub: "Enter a new password for your account.",
+    inviteRecoveryTitle: "Welcome — choose your password",
+    inviteRecoverySub: "Pick a password to finish setting up your account.",
     recoverySubmitBtn: "Save password",
     recoveryTooShort: "Password must be at least 6 characters.",
     recoveryDone: "Password updated.",
@@ -614,13 +609,12 @@ var dict = {
     installMsg: "Installer pour un accès rapide", installBtn: "Installer", dismissBtn: "Ignorer",
     loginTitle: "Connexion", loginSub: "E-mail et mot de passe",
     loginEmail: "E-mail", loginPassword: "Mot de passe (min 6)", loginSubmitSignIn: "Se connecter",
-    loginSubmitSignUp: "Créer un compte", loginSubmitMagic: "Envoyer le lien magique",
-    loginTabSignIn: "Connexion", loginTabSignUp: "Inscription", loginTabMagic: "Lien magique",
     forgotBtn: "Mot de passe oublié ?", forgotInfo: "E-mail de réinitialisation envoyé (vérifiez votre boîte).",
-    magicInfo: "Lien magique envoyé — ouvrez-le sur cet appareil.",
-    signupInfo: "Compte créé. Vérifiez votre e-mail si une confirmation est requise.",
+    loginNoAccount: "Pas de compte ? Demandez à votre administrateur de vous inviter.",
     recoveryTitle: "Définir un nouveau mot de passe",
     recoverySub: "Saisissez un nouveau mot de passe pour votre compte.",
+    inviteRecoveryTitle: "Bienvenue — choisissez votre mot de passe",
+    inviteRecoverySub: "Choisissez un mot de passe pour finaliser votre compte.",
     recoverySubmitBtn: "Enregistrer le mot de passe",
     recoveryTooShort: "Le mot de passe doit comporter au moins 6 caractères.",
     recoveryDone: "Mot de passe mis à jour.",
@@ -660,6 +654,24 @@ function t(k) { return (dict[currLang] && dict[currLang][k]) || dict.en[k] || k;
 // this helper. Don't rely on Supabase's "Site URL" fallback — its handling of
 // the path component is inconsistent and lands users on bare origin.
 function appBaseUrl() { return window.location.origin + window.location.pathname; }
+
+// Snapshot the URL hash params at script-load time. Supabase's createClient
+// (deferred module, runs later) will parse and clear the hash to extract the
+// session, so we have to capture `type=invite` etc. before that happens.
+var initialHashParams = (function() {
+  try {
+    var hash = window.location.hash || '';
+    if (hash.charAt(0) === '#') hash = hash.slice(1);
+    var params = {};
+    hash.split('&').forEach(function(pair) {
+      if (!pair) return;
+      var idx = pair.indexOf('=');
+      if (idx > -1) params[decodeURIComponent(pair.slice(0, idx))] = decodeURIComponent(pair.slice(idx + 1));
+    });
+    return params;
+  } catch (e) { return {}; }
+})();
+var inviteHandled = false;
 
 function toggleLang() {
   currLang = currLang === 'en' ? 'fr' : 'en';
@@ -723,16 +735,14 @@ function applyLang() {
 
   setText('loginTitle', d.loginTitle);
   setText('loginSub', d.loginSub);
-  setText('tabSignIn', d.loginTabSignIn);
-  setText('tabSignUp', d.loginTabSignUp);
-  setText('tabMagic', d.loginTabMagic);
   setText('forgotBtn', d.forgotBtn);
   document.getElementById('loginEmail').placeholder = d.loginEmail;
   document.getElementById('loginPassword').placeholder = d.loginPassword;
   setText('recoveryTitle', d.recoveryTitle);
   setText('recoverySub', d.recoverySub);
   setText('recoverySubmitBtn', d.recoverySubmitBtn);
-  updateAuthSubmitLabel();
+  setText('loginSubmitBtn', d.loginSubmitSignIn);
+  setText('loginNoAccount', d.loginNoAccount);
 
   setText('adminBtn', d.adminBtn);
   setText('adminTitle', d.adminTitle);
@@ -781,28 +791,6 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 /* ─────────── auth flow ─────────── */
-function switchAuthTab(mode) {
-  authMode = mode;
-  document.getElementById('tabSignIn').classList.toggle('active', mode === 'signin');
-  document.getElementById('tabSignUp').classList.toggle('active', mode === 'signup');
-  document.getElementById('tabMagic') .classList.toggle('active', mode === 'magic');
-  var pw = document.getElementById('loginPassword');
-  pw.classList.toggle('hidden', mode === 'magic');
-  pw.required = mode !== 'magic';
-  document.getElementById('forgotBtn').classList.toggle('hidden', mode !== 'signin');
-  document.getElementById('loginError').textContent = '';
-  document.getElementById('loginInfo').classList.add('hidden');
-  updateAuthSubmitLabel();
-}
-function updateAuthSubmitLabel() {
-  var d = dict[currLang];
-  var btn = document.getElementById('loginSubmitBtn');
-  btn.textContent = authMode === 'signin' ? d.loginSubmitSignIn :
-                    authMode === 'signup' ? d.loginSubmitSignUp :
-                    d.loginSubmitMagic;
-}
-window.switchAuthTab = switchAuthTab;
-
 async function doAuth(ev) {
   if (ev && ev.preventDefault) ev.preventDefault();
   var email = document.getElementById('loginEmail').value.trim();
@@ -812,23 +800,12 @@ async function doAuth(ev) {
   var btn = document.getElementById('loginSubmitBtn');
   err.textContent = ''; info.classList.add('hidden');
 
-  if (!email) { err.textContent = t('loginMissing'); return; }
-  if (authMode !== 'magic' && password.length < 6) { err.textContent = t('loginMissing'); return; }
+  if (!email || password.length < 6) { err.textContent = t('loginMissing'); return; }
 
   btn.disabled = true;
   try {
-    if (authMode === 'signin') {
-      var { error } = await window.supabase.auth.signInWithPassword({ email: email, password: password });
-      if (error) throw error;
-    } else if (authMode === 'signup') {
-      var { error } = await window.supabase.auth.signUp({ email: email, password: password, options: { emailRedirectTo: appBaseUrl() } });
-      if (error) throw error;
-      info.textContent = t('signupInfo'); info.classList.remove('hidden');
-    } else { /* magic */
-      var { error } = await window.supabase.auth.signInWithOtp({ email: email, options: { emailRedirectTo: appBaseUrl() } });
-      if (error) throw error;
-      info.textContent = t('magicInfo'); info.classList.remove('hidden');
-    }
+    var { error } = await window.supabase.auth.signInWithPassword({ email: email, password: password });
+    if (error) throw error;
   } catch (e) {
     err.textContent = (e && e.message) || t('loginFailed');
   } finally {
@@ -849,7 +826,11 @@ async function doPasswordReset() {
 }
 window.doPasswordReset = doPasswordReset;
 
-function showRecoveryOverlay() {
+function showRecoveryOverlay(mode) {
+  // mode: 'recovery' (forgot-password flow) or 'invite' (admin invite acceptance)
+  var d = dict[currLang] || dict.en;
+  document.getElementById('recoveryTitle').textContent = mode === 'invite' ? d.inviteRecoveryTitle : d.recoveryTitle;
+  document.getElementById('recoverySub').textContent = mode === 'invite' ? d.inviteRecoverySub : d.recoverySub;
   document.getElementById('loginOverlay').classList.add('hidden');
   document.getElementById('recoveryOverlay').classList.remove('hidden');
   document.getElementById('recoveryError').textContent = '';
@@ -1015,7 +996,14 @@ function __startApp() {
       // Recovery sessions are restricted to auth.updateUser() — show the
       // set-new-password modal and stop. loadCurrentUser() runs after the
       // password is set successfully (and we navigate normally from there).
-      showRecoveryOverlay();
+      showRecoveryOverlay('recovery');
+      return;
+    }
+    // First SIGNED_IN after an admin invite click: the user has a session but
+    // no password yet. Force them to set one before continuing into the app.
+    if (event === 'SIGNED_IN' && !inviteHandled && initialHashParams.type === 'invite') {
+      inviteHandled = true;
+      showRecoveryOverlay('invite');
       return;
     }
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
