@@ -62,6 +62,22 @@ Every receipt must be uploaded to `receipts/<user_id>/<expense_id>.<ext>`. The s
 
 Receipts are private; the UI fetches them with `createSignedUrl(path, 60)` (60-second URL).
 
+### Auth email redirects: ALWAYS pass `redirectTo` from `appBaseUrl()`, never rely on Site URL
+
+Every Supabase auth call that triggers an email with a redirect link (sign-up, magic-link, password-reset, invite, email-change) MUST pass `redirectTo` / `emailRedirectTo` explicitly, computed from the helper `appBaseUrl()` (returns `window.location.origin + window.location.pathname`). Don't rely on the Site URL fallback configured in the Supabase dashboard — its handling of the path component is inconsistent (sometimes treated as origin-only) and lands users at bare origin → 404 on subpath deploys like GitHub Pages.
+
+Authoritative call sites:
+- `auth.signUp({ email, password, options: { emailRedirectTo: appBaseUrl() } })`
+- `auth.signInWithOtp({ email, options: { emailRedirectTo: appBaseUrl() } })`
+- `auth.resetPasswordForEmail(email, { redirectTo: appBaseUrl() })`
+- The `invite-user` Edge Function: frontend sends `redirectTo` in the body; the function appends it as a `redirect_to` query parameter to `/auth/v1/invite`
+
+The recovery URL must also be present in **Supabase → Auth → URL Configuration → Redirect URLs** allowlist or GoTrue rejects the redirect.
+
+### Password recovery has its own UI
+
+`onAuthStateChange` distinguishes `PASSWORD_RECOVERY` from other events. A recovery session is restricted to `auth.updateUser()` only — calling `loadCurrentUser()` would put the user in a half-broken state. The recovery flow shows a dedicated "set new password" overlay (`#recoveryOverlay`); on submit, `auth.updateUser({ password })` upgrades the session, then `loadCurrentUser()` runs normally.
+
 ### Realtime sync is a single channel with client-side reconciliation
 
 `subscribeRealtime()` in `index.html` opens one channel on `public.expenses`, and a single `postgres_changes` handler dispatches INSERT/UPDATE/DELETE into the local `expenses` array. RLS already filters what the channel delivers, so the handler doesn't re-check authorization. If you add a new table that needs live updates, you must also add `alter publication supabase_realtime add table public.<name>;` (mirrors the line at the bottom of `_schema.sql`).

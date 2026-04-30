@@ -391,6 +391,18 @@
   </div>
 </div>
 
+<div class="login-overlay hidden" id="recoveryOverlay">
+  <div class="login-card">
+    <h2 id="recoveryTitle">Set a new password</h2>
+    <div class="login-sub" id="recoverySub">Enter a new password for your account.</div>
+    <form onsubmit="doRecoverySubmit(event)">
+      <input type="password" id="recoveryPassword" autocomplete="new-password" placeholder="New password" minlength="6" required>
+      <button type="submit" class="login-btn" id="recoverySubmitBtn">Save password</button>
+    </form>
+    <div class="login-error" id="recoveryError"></div>
+  </div>
+</div>
+
 <div class="login-overlay hidden" id="adminOverlay">
   <div class="admin-card">
     <div class="admin-header">
@@ -530,6 +542,11 @@ var dict = {
     loginTabSignIn: "Sign in", loginTabSignUp: "Sign up", loginTabMagic: "Magic link",
     forgotBtn: "Forgot password?", forgotInfo: "Password reset email sent (check your inbox).",
     magicInfo: "Magic-link email sent — open it on this device.", signupInfo: "Account created. Check your email if confirmation is required.",
+    recoveryTitle: "Set a new password",
+    recoverySub: "Enter a new password for your account.",
+    recoverySubmitBtn: "Save password",
+    recoveryTooShort: "Password must be at least 6 characters.",
+    recoveryDone: "Password updated.",
     loginFailed: "Authentication failed.", loginMissing: "Enter your email and password.",
     logoutBtn: "Logout",
     adminBtn: "Manage Users", adminTitle: "Manage Users",
@@ -602,6 +619,11 @@ var dict = {
     forgotBtn: "Mot de passe oublié ?", forgotInfo: "E-mail de réinitialisation envoyé (vérifiez votre boîte).",
     magicInfo: "Lien magique envoyé — ouvrez-le sur cet appareil.",
     signupInfo: "Compte créé. Vérifiez votre e-mail si une confirmation est requise.",
+    recoveryTitle: "Définir un nouveau mot de passe",
+    recoverySub: "Saisissez un nouveau mot de passe pour votre compte.",
+    recoverySubmitBtn: "Enregistrer le mot de passe",
+    recoveryTooShort: "Le mot de passe doit comporter au moins 6 caractères.",
+    recoveryDone: "Mot de passe mis à jour.",
     loginFailed: "Échec d'authentification.", loginMissing: "Saisissez votre e-mail et mot de passe.",
     logoutBtn: "Déconnexion",
     adminBtn: "Gérer les utilisateurs", adminTitle: "Gérer les utilisateurs",
@@ -632,6 +654,12 @@ var dict = {
 
 var currLang = 'en';
 function t(k) { return (dict[currLang] && dict[currLang][k]) || dict.en[k] || k; }
+
+// Project-wide convention (per CLAUDE.md): every Supabase auth call that sends
+// an email with a redirect link MUST pass redirectTo / emailRedirectTo from
+// this helper. Don't rely on Supabase's "Site URL" fallback — its handling of
+// the path component is inconsistent and lands users on bare origin.
+function appBaseUrl() { return window.location.origin + window.location.pathname; }
 
 function toggleLang() {
   currLang = currLang === 'en' ? 'fr' : 'en';
@@ -701,6 +729,9 @@ function applyLang() {
   setText('forgotBtn', d.forgotBtn);
   document.getElementById('loginEmail').placeholder = d.loginEmail;
   document.getElementById('loginPassword').placeholder = d.loginPassword;
+  setText('recoveryTitle', d.recoveryTitle);
+  setText('recoverySub', d.recoverySub);
+  setText('recoverySubmitBtn', d.recoverySubmitBtn);
   updateAuthSubmitLabel();
 
   setText('adminBtn', d.adminBtn);
@@ -790,11 +821,11 @@ async function doAuth(ev) {
       var { error } = await window.supabase.auth.signInWithPassword({ email: email, password: password });
       if (error) throw error;
     } else if (authMode === 'signup') {
-      var { error } = await window.supabase.auth.signUp({ email: email, password: password });
+      var { error } = await window.supabase.auth.signUp({ email: email, password: password, options: { emailRedirectTo: appBaseUrl() } });
       if (error) throw error;
       info.textContent = t('signupInfo'); info.classList.remove('hidden');
     } else { /* magic */
-      var { error } = await window.supabase.auth.signInWithOtp({ email: email });
+      var { error } = await window.supabase.auth.signInWithOtp({ email: email, options: { emailRedirectTo: appBaseUrl() } });
       if (error) throw error;
       info.textContent = t('magicInfo'); info.classList.remove('hidden');
     }
@@ -812,11 +843,43 @@ async function doPasswordReset() {
   var info = document.getElementById('loginInfo');
   err.textContent = ''; info.classList.add('hidden');
   if (!email) { err.textContent = t('loginMissing'); return; }
-  var { error } = await window.supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  var { error } = await window.supabase.auth.resetPasswordForEmail(email, { redirectTo: appBaseUrl() });
   if (error) { err.textContent = error.message; return; }
   info.textContent = t('forgotInfo'); info.classList.remove('hidden');
 }
 window.doPasswordReset = doPasswordReset;
+
+function showRecoveryOverlay() {
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('recoveryOverlay').classList.remove('hidden');
+  document.getElementById('recoveryError').textContent = '';
+  setTimeout(function(){ document.getElementById('recoveryPassword').focus(); }, 50);
+}
+function hideRecoveryOverlay() {
+  document.getElementById('recoveryOverlay').classList.add('hidden');
+  document.getElementById('recoveryPassword').value = '';
+  document.getElementById('recoveryError').textContent = '';
+}
+async function doRecoverySubmit(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  var input = document.getElementById('recoveryPassword');
+  var err = document.getElementById('recoveryError');
+  var btn = document.getElementById('recoverySubmitBtn');
+  err.textContent = '';
+  var pwd = input.value;
+  if (!pwd || pwd.length < 6) { err.textContent = t('recoveryTooShort'); return; }
+  btn.disabled = true;
+  try {
+    var { error } = await window.supabase.auth.updateUser({ password: pwd });
+    if (error) { err.textContent = error.message; return; }
+    hideRecoveryOverlay();
+    toast(t('recoveryDone'));
+    loadCurrentUser();
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.doRecoverySubmit = doRecoverySubmit;
 
 async function doLogout() {
   await window.supabase.auth.signOut();
@@ -948,7 +1011,14 @@ function subscribeRealtime() {
 // inside this function.
 function __startApp() {
   window.supabase.auth.onAuthStateChange(function(event, _session) {
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
+    if (event === 'PASSWORD_RECOVERY') {
+      // Recovery sessions are restricted to auth.updateUser() — show the
+      // set-new-password modal and stop. loadCurrentUser() runs after the
+      // password is set successfully (and we navigate normally from there).
+      showRecoveryOverlay();
+      return;
+    }
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
       loadCurrentUser();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null; expenses = []; allProjects = []; projectSummary = [];
@@ -1826,8 +1896,7 @@ async function adminInviteUser(ev) {
   var btn = document.getElementById('adminInviteBtn');
   btn.disabled = true;
   try {
-    var redirectTo = window.location.origin + window.location.pathname;
-    var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email, redirectTo: redirectTo } });
+    var { data, error } = await window.supabase.functions.invoke('invite-user', { body: { email: email, redirectTo: appBaseUrl() } });
     if (error) {
       // supabase-js wraps non-2xx responses with a generic message and stashes
       // the real Response on error.context. Pull our function's JSON body off

@@ -12,6 +12,12 @@ Thumbs.db
 # Claude Code per-user settings (project-shared settings.json may be committed)
 .claude/settings.local.json
 
+# Supabase CLI working dir
+supabase/.temp/
+
+# Local screenshots dropped into the repo root (not part of the project)
+Screenshot.png
+
 # Railway / Heroku log exports
 logs*.json
 
