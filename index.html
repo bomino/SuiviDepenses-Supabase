@@ -975,6 +975,80 @@ function toast(msg) {
 }
 window.toast = toast;
 
+/* ─────────── IndexedDB queue (offline writes) ─────────── */
+var IDB_NAME = 'suividepenses_offline';
+var IDB_VERSION = 1;
+var IDB_STORE = 'pending_ops';
+var idbConn = null;
+
+function idbOpen() {
+  if (idbConn) return Promise.resolve(idbConn);
+  return new Promise(function(resolve, reject) {
+    var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = function(e) { idbConn = e.target.result; resolve(idbConn); };
+    req.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+function idbAddOp(op) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var store = tx.objectStore(IDB_STORE);
+      var req = store.add(op);
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
+function idbListOps() {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readonly');
+      var req = tx.objectStore(IDB_STORE).getAll();
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
+function idbUpdateOp(id, patch) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var store = tx.objectStore(IDB_STORE);
+      var getReq = store.get(id);
+      getReq.onsuccess = function() {
+        var row = getReq.result;
+        if (!row) return resolve(null);
+        Object.assign(row, patch);
+        var putReq = store.put(row);
+        putReq.onsuccess = function() { resolve(row); };
+        putReq.onerror = function() { reject(putReq.error); };
+      };
+      getReq.onerror = function() { reject(getReq.error); };
+    });
+  });
+}
+
+function idbDeleteOp(id) {
+  return idbOpen().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var req = tx.objectStore(IDB_STORE).delete(id);
+      req.onsuccess = function() { resolve(); };
+      req.onerror = function() { reject(req.error); };
+    });
+  });
+}
+
 /* ─────────── expense CRUD ─────────── */
 async function saveExpense() {
   var desc = document.getElementById('desc').value.trim();
