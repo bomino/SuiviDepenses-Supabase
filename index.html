@@ -832,8 +832,9 @@ async function loadCurrentUser() {
   }
   setStorageMode(true);
 
-  // Try to claim first-admin if no admin exists yet (idempotent on the server)
-  await window.supabase.rpc('claim_first_admin').catch(function(){});
+  // Try to claim first-admin if no admin exists yet (idempotent on the server).
+  // Use try/catch — Supabase v2's .rpc() returns a PromiseLike without .catch.
+  try { await window.supabase.rpc('claim_first_admin'); } catch (e) {}
 
   var uid = session.user.id;
   var { data: prof } = await window.supabase
@@ -844,7 +845,7 @@ async function loadCurrentUser() {
 
   if (!prof) {
     /* trigger handle_new_user should have created this row, but just in case: */
-    await window.supabase.from('profiles').insert({ id: uid }).catch(function(){});
+    try { await window.supabase.from('profiles').insert({ id: uid }); } catch (e) {}
     prof = { id: uid, is_admin: false, project_id: null, projects: null };
   }
 
@@ -1163,6 +1164,9 @@ var replayInFlight = false;
 async function replayQueue() {
   if (replayInFlight) return;
   if (navigator.onLine === false) return;
+  // Guard against the race where focus/visibilitychange fires before the
+  // deferred module sets window.supabase.
+  if (!window.supabase) return;
   replayInFlight = true;
   try {
     var ops = await idbListOps();
@@ -1244,7 +1248,7 @@ async function replayOne(op) {
     // Receipt cleanup is best-effort; ignore errors
     var existing = expenses.find(function(e){ return e.id === op.target_id; });
     if (existing && existing.receipt_path) {
-      await window.supabase.storage.from('receipts').remove([existing.receipt_path]).catch(function(){});
+      try { await window.supabase.storage.from('receipts').remove([existing.receipt_path]); } catch (e) {}
     }
     var del = await window.supabase.from('expenses').delete().eq('id', op.target_id).select();
     if (del.error) throw del.error;
@@ -1438,7 +1442,7 @@ async function deleteExpense(id) {
   };
   var res = await routedWrite(spec, async function() {
     if (e && e.receipt_path) {
-      await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
+      try { await window.supabase.storage.from('receipts').remove([e.receipt_path]); } catch (er) {}
     }
     return window.supabase.from('expenses').delete().eq('id', id);
   });
@@ -1836,7 +1840,10 @@ window.adminInviteUser = adminInviteUser;
 /* ─────────── init ─────────── */
 try { currLang = localStorage.getItem('expense-tracker-lang') || 'en'; } catch(e) {}
 applyLang();
-loadCurrentUser();
+// loadCurrentUser() is NOT called here — window.supabase isn't set yet (module
+// is deferred). The onAuthStateChange listener registered inside __startApp()
+// receives an INITIAL_SESSION event on Supabase client init, which calls
+// loadCurrentUser() at the right time.
 </script>
 
 </body>
