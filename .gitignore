@@ -1,0 +1,19 @@
+# local config (Supabase URL + anon key go in index.html directly,
+# but if you ever externalize them: keep .env files out)
+.env
+.env.local
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Railway / Heroku log exports
+logs*.json
+
+# python (only here for the optional icon regenerator)
+__pycache__/
+*.pyc
+.venv/
+venv/

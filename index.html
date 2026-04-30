@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Suivi des Dépenses</title>
+<meta name="theme-color" content="#f59e0b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Expenses">
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #f1f5f9;
+    --sub: #94a3b8;
+    --accent: #f59e0b;
+    --accent-glow: rgba(245,158,11,.25);
+    --green: #22c55e;
+    --green-bg: rgba(34,197,94,.15);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,.15);
+    --amber: #f59e0b;
+    --amber-bg: rgba(245,158,11,.15);
+    --blue: #3b82f6;
+    --radius: 14px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: -50%; background: radial-gradient(ellipse at 20% 0%, rgba(245,158,11,.06) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(59,130,246,.05) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+  .container { max-width: 1120px; margin: 0 auto; padding: 20px 20px 80px; position: relative; z-index: 1; }
+
+  .app-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .app-title { font-size: 1.65rem; font-weight: 800; letter-spacing: -.02em; background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .project-name { font-size: .8rem; color: var(--sub); margin-top: -2px; display: flex; align-items: center; gap: 6px; }
+  .project-name span { cursor: pointer; border-bottom: 1px dashed transparent; }
+  .project-name span:hover { border-color: var(--sub); }
+  .project-name .edit-icon { font-size: .7rem; opacity: .5; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border: none; border-radius: var(--radius-sm); font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .2s; white-space: nowrap; font-family: inherit; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--sub); }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--text); }
+  .btn-danger { background: transparent; border: 1px solid rgba(239,68,68,.4); color: var(--red); }
+  .btn-danger:hover { background: var(--red-bg); }
+  .btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #0f172a; font-weight: 700; padding: 10px 20px; box-shadow: 0 4px 14px var(--accent-glow); }
+  .btn-cancel { background: var(--surface2); color: var(--sub); border: 1px solid var(--border); padding: 10px 20px; }
+  .btn-lang { background: var(--surface2); border: 1px solid var(--accent); color: var(--accent); font-weight: 800; font-size: .75rem; padding: 6px 12px; border-radius: 6px; cursor: pointer; letter-spacing: .03em; font-family: inherit; }
+  .btn-lang:hover { background: var(--accent); color: var(--bg); }
+  .btn-db { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 12px; font-size: .65rem; font-weight: 700; font-family: inherit; border: none; cursor: pointer; }
+  .db-server { background: rgba(34,197,94,.15); color: var(--green); }
+  .db-local { background: var(--surface2); color: var(--sub); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-server { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot-local { background: var(--sub); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); position: relative; overflow: hidden; transition: transform .2s, border-color .2s; }
+  .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .stat-card .icon-circle { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; margin-bottom: 10px; }
+  .stat-card .label { font-size: .72rem; color: var(--sub); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 4px; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 800; letter-spacing: -.01em; }
+  .accent-green .icon-circle { background: var(--green-bg); color: var(--green); } .accent-green .value { color: var(--green); }
+  .accent-red   .icon-circle { background: var(--red-bg);   color: var(--red); }   .accent-red   .value { color: var(--red); }
+  .accent-amber .icon-circle { background: var(--amber-bg); color: var(--amber); } .accent-amber .value { color: var(--amber); }
+  .accent-blue  .icon-circle { background: rgba(59,130,246,.15); color: var(--blue); } .accent-blue .value { color: var(--blue); }
+
+  .section { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; }
+  .section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 18px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: .72rem; font-weight: 700; color: var(--sub); text-transform: uppercase; letter-spacing: .04em; }
+  .field input, .field select { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: .85rem; background: var(--bg); color: var(--text); font-family: inherit; transition: border-color .2s, box-shadow .2s; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .field select option { background: var(--surface); color: var(--text); }
+
+  .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filter-bar select, .filter-bar input { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: .8rem; background: var(--bg); color: var(--text); font-family: inherit; }
+
+  .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  td.notes-cell { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th { text-align: left; padding: 12px 10px; border-bottom: 2px solid var(--border); color: var(--sub); font-weight: 700; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }
+  td { padding: 12px 10px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: var(--surface2); }
+  .amount-cell { font-weight: 700; color: var(--accent); }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 10px; font-size: .7rem; font-weight: 700; }
+  .badge-paid    { background: var(--green-bg); color: var(--green); }
+  .badge-pending { background: var(--amber-bg); color: var(--amber); }
+  .badge-unpaid  { background: var(--red-bg);   color: var(--red); }
+  .row-actions { display: flex; gap: 6px; }
+  .icon-btn { background: transparent; border: 1px solid var(--border); color: var(--sub); width: 30px; height: 30px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; font-family: inherit; }
+  .icon-btn:hover { color: var(--text); border-color: var(--text); }
+  .icon-btn.danger { border-color: rgba(239,68,68,.4); color: var(--red); }
+  .icon-btn.danger:hover { background: var(--red-bg); }
+  .receipt-link { color: var(--blue); text-decoration: none; cursor: pointer; }
+  .receipt-link:hover { text-decoration: underline; }
+
+  .empty-state { text-align: center; padding: 40px; color: var(--sub); }
+  .empty-state .icon { font-size: 2.5rem; opacity: .3; margin-bottom: 12px; }
+
+  .toast-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: var(--surface2); color: var(--text); padding: 10px 18px; border-radius: var(--radius-sm); font-size: .85rem; box-shadow: 0 4px 16px rgba(0,0,0,.4); border: 1px solid var(--border); opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; }
+  .toast.visible { opacity: 1; transform: translateY(0); }
+
+  .install-banner { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--accent); padding: 16px 20px; border-radius: var(--radius); z-index: 150; display: none; box-shadow: 0 8px 32px rgba(0,0,0,.5); max-width: 300px; animation: slideUp .4s ease; }
+  .install-banner.show { display: block; }
+  .install-banner h4 { font-size: .85rem; margin-bottom: 10px; }
+  .install-banner .btns { display: flex; gap: 8px; }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .hidden { display: none !important; }
+
+  /* login overlay */
+  .login-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .94); backdrop-filter: blur(6px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; width: 100%; max-width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .login-card h2 { font-size: 1.25rem; font-weight: 800; margin-bottom: 6px; background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .login-card .login-sub { font-size: .8rem; color: var(--sub); margin-bottom: 20px; }
+  .login-card input { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: .9rem; margin-bottom: 12px; font-family: inherit; }
+  .login-card input:focus { outline: none; border-color: var(--accent); }
+  .login-card .login-btn { width: 100%; padding: 10px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; font-family: inherit; font-size: .9rem; margin-top: 4px; }
+  .login-card .login-btn:hover { filter: brightness(1.1); }
+  .login-card .login-btn:disabled { opacity: .5; cursor: wait; }
+  .login-card .login-btn.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-top: 8px; }
+  .login-card .login-btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .login-error { color: var(--red); font-size: .8rem; margin-top: 10px; min-height: 1.2em; }
+  .login-info { color: var(--green); font-size: .8rem; margin-top: 10px; }
+  .login-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .login-tab { flex: 1; padding: 8px; background: transparent; border: 1px solid var(--border); color: var(--sub); border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; font-size: .8rem; font-weight: 600; }
+  .login-tab.active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+
+  .user-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 12px; font-size: .72rem; font-weight: 700; background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .user-pill.admin { background: rgba(245,158,11,.15); color: var(--accent); border-color: rgba(245,158,11,.4); }
+
+  /* admin overlay */
+  .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .admin-card .admin-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .admin-card h2 { font-size: 1.15rem; font-weight: 800; background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .admin-card .modal-close { background: transparent; border: 1px solid var(--border); color: var(--sub); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 1rem; line-height: 1; font-family: inherit; }
+  .admin-card .modal-close:hover { color: var(--text); border-color: var(--text); }
+  .admin-add-form { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 14px; background: var(--surface2); border-radius: var(--radius-sm); margin-bottom: 18px; }
+  .admin-add-form input { padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: .85rem; font-family: inherit; }
+  .admin-add-form .admin-create-btn { padding: 8px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; font-family: inherit; font-size: .85rem; }
+  .admin-section-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--sub); font-weight: 700; margin: 18px 0 10px; }
+  .admin-user-list { display: flex; flex-direction: column; gap: 8px; }
+  .admin-user-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface2); border-radius: var(--radius-sm); flex-wrap: wrap; }
+  .admin-user-row .name { font-weight: 600; color: var(--text); flex: 1; min-width: 0; word-break: break-word; }
+  .admin-user-row .role-tag { font-size: .65rem; padding: 2px 8px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .admin-user-row .role-admin { background: rgba(245,158,11,.15); color: var(--accent); }
+  .admin-user-row .role-user  { background: rgba(148,163,184,.15); color: var(--sub); }
+  .admin-user-row select { padding: 4px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: .7rem; font-family: inherit; max-width: 160px; }
+  .admin-user-row .actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .admin-user-row button { padding: 5px 9px; border-radius: 6px; font-size: .7rem; font-weight: 600; cursor: pointer; font-family: inherit; border: 1px solid var(--border); background: transparent; color: var(--sub); }
+  .admin-user-row button:hover { color: var(--text); border-color: var(--text); }
+  .admin-user-row button.danger { border-color: rgba(239,68,68,.4); color: var(--red); }
+
+  .no-project-banner { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 20px; color: var(--text); font-size: .9rem; line-height: 1.5; }
+  .no-project-banner strong { color: var(--accent); display: block; margin-bottom: 4px; }
+
+  .receipt-thumb { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface2); border-radius: var(--radius-sm); border: 1px solid var(--border); font-size: .75rem; cursor: pointer; }
+  .receipt-thumb:hover { border-color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .container { padding: 14px 14px 60px; }
+    .app-header { flex-direction: column; align-items: stretch; }
+    .header-actions { gap: 6px; }
+    .app-title { font-size: 1.3rem; }
+    .stat-card .value { font-size: 1.3rem; }
+    .form-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .filter-bar { gap: 6px; }
+    .filter-bar select, .filter-bar input { flex: 1 1 calc(50% - 4px); min-width: 0; }
+    .btn { padding: 11px 16px; min-height: 42px; }
+    .btn-ghost, .btn-danger { min-height: 38px; }
+    .field input, .field select { padding: 12px 12px; }
+
+    /* mobile cards */
+    .table-wrap { overflow: visible; }
+    table, table tbody, table tr, table td { display: block; width: 100%; }
+    table thead { display: none; }
+    table tr { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; }
+    table tr:hover { background: var(--surface2); }
+    table td { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: none; gap: 12px; }
+    table td::before { content: attr(data-label); color: var(--sub); font-weight: 700; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; flex-shrink: 0; }
+    table td.notes-cell { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; text-align: right; }
+    table td.actions-cell { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; justify-content: flex-end; }
+    table td.actions-cell::before { display: none; }
+    .row-actions .icon-btn { min-width: 38px; min-height: 38px; }
+
+    .admin-card { padding: 20px; }
+    .admin-user-row { flex-direction: column; align-items: stretch; gap: 10px; }
+    .admin-user-row .name { font-size: 1rem; }
+    .admin-user-row select { max-width: none; width: 100%; padding: 8px 10px; font-size: .85rem; }
+    .admin-user-row .actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+    .admin-user-row button { flex: 1 1 auto; padding: 8px 12px; font-size: .75rem; min-height: 38px; }
+  }
+
+  @media (max-width: 380px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .stat-card { padding: 14px; }
+    .stat-card .value { font-size: 1.15rem; }
+    .filter-bar select, .filter-bar input { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="app-header">
+    <div>
+      <div class="app-title" id="headerTitle">Suivi des Dépenses</div>
+      <div class="project-name">
+        <span onclick="renameCurrentProject()" id="projectName">—</span>
+        <span class="edit-icon">&#9998;</span>
+        <button class="btn-db" id="dbIndicator">
+          <span class="status-dot"></span>
+          <span id="dbLabel">offline</span>
+        </button>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-lang" onclick="toggleLang()" id="langBtn" title="Langue / Language">EN</button>
+      <button class="btn btn-ghost" onclick="exportCSV()" id="exportBtn">Export</button>
+      <button class="btn btn-danger" onclick="clearAll()" id="clearBtn">Clear</button>
+      <button class="btn btn-ghost hidden" onclick="openAdmin()" id="adminBtn">Manage Users</button>
+      <span class="user-pill hidden" id="userPill"></span>
+      <button class="btn btn-ghost hidden" onclick="doLogout()" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card accent-blue">
+      <div class="icon-circle">&#128200;</div>
+      <div class="label" id="statTotalLabel">Total</div>
+      <div class="value" id="statTotal">0</div>
+    </div>
+    <div class="stat-card accent-green">
+      <div class="icon-circle">&#10003;</div>
+      <div class="label" id="statPaidLabel">Paid</div>
+      <div class="value" id="statPaid">0</div>
+    </div>
+    <div class="stat-card accent-red">
+      <div class="icon-circle">&#10007;</div>
+      <div class="label" id="statUnpaidLabel">Unpaid</div>
+      <div class="value" id="statUnpaid">0</div>
+    </div>
+    <div class="stat-card accent-amber">
+      <div class="icon-circle">&#8987;</div>
+      <div class="label" id="statPendingLabel">Pending</div>
+      <div class="value" id="statPending">0</div>
+    </div>
+  </div>
+
+  <div class="no-project-banner hidden" id="noProjectBanner">
+    <strong id="noProjectTitle">No project assigned</strong>
+    <span id="noProjectMsg">Ask an admin to assign you to a project before you can add expenses.</span>
+  </div>
+
+  <div class="section">
+    <h2 id="formTitle">Add Expense</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label id="lblDesc">Description *</label>
+        <input type="text" id="desc" placeholder="Cement, lumber..." maxlength="200">
+      </div>
+      <div class="field">
+        <label id="lblAmount">Amount *</label>
+        <input type="number" id="amount" placeholder="0.00" min="0.01" step="0.01">
+      </div>
+      <div class="field">
+        <label id="lblCategory">Category</label>
+        <select id="category"></select>
+      </div>
+      <div class="field">
+        <label id="lblDate">Date</label>
+        <input type="date" id="date">
+      </div>
+      <div class="field">
+        <label id="lblPaidBy">Paid By</label>
+        <input type="text" id="paidBy" placeholder="Name" maxlength="100">
+      </div>
+      <div class="field">
+        <label id="lblStatus">Status</label>
+        <select id="status"></select>
+      </div>
+      <div class="field">
+        <label id="lblNotes">Notes</label>
+        <input type="text" id="notes" placeholder="Optional" maxlength="500">
+      </div>
+      <div class="field">
+        <label id="lblReceipt">Receipt photo</label>
+        <input type="file" id="receipt" accept="image/jpeg,image/png,image/webp,application/pdf">
+      </div>
+      <input type="hidden" id="editId">
+      <div class="field" style="align-self:flex-end">
+        <button class="btn btn-primary" onclick="saveExpense()" id="saveBtn">Add</button>
+      </div>
+      <div class="field" style="align-self:flex-end">
+        <button class="btn btn-cancel hidden" onclick="cancelEdit()" id="cancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+      <h2 style="margin:0"><span id="allExpensesLabel">All Expenses</span> &middot; <span id="countLabel">0</span></h2>
+      <div class="filter-bar">
+        <select id="filterCategory" onchange="render()"><option value="">---</option></select>
+        <select id="filterStatus" onchange="render()"><option value="">---</option></select>
+        <input type="date" id="filterFrom" onchange="render()">
+        <input type="date" id="filterTo" onchange="render()">
+        <input type="text" id="filterSearch" oninput="render()" style="min-width:130px">
+        <button class="btn btn-ghost" onclick="clearFilters();render()" id="resetBtn" style="font-size:.7rem">Reset</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th id="thDate">Date</th>
+            <th id="thDesc">Description</th>
+            <th id="thCat">Category</th>
+            <th id="thAmt">Amount</th>
+            <th id="thPaidBy">Paid By</th>
+            <th id="thStatus">Status</th>
+            <th id="thNotes">Notes</th>
+            <th id="thReceipt">Receipt</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyMsg" class="empty-state hidden">
+      <div class="icon">&#128221;</div>
+      <div class="msg">No expenses yet</div>
+    </div>
+  </div>
+</div>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <h2 id="loginTitle">Sign In</h2>
+    <div class="login-sub" id="loginSub">Enter your email and password</div>
+    <div class="login-tabs">
+      <button class="login-tab active" id="tabSignIn" onclick="switchAuthTab('signin')">Sign in</button>
+      <button class="login-tab" id="tabSignUp" onclick="switchAuthTab('signup')">Sign up</button>
+      <button class="login-tab" id="tabMagic" onclick="switchAuthTab('magic')">Magic link</button>
+    </div>
+    <form onsubmit="doAuth(event)">
+      <input type="email" id="loginEmail" autocomplete="email" placeholder="Email" required>
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Password" minlength="6">
+      <button type="submit" class="login-btn" id="loginSubmitBtn">Sign In</button>
+    </form>
+    <button type="button" class="login-btn secondary hidden" id="forgotBtn" onclick="doPasswordReset()">Forgot password?</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-info hidden" id="loginInfo"></div>
+  </div>
+</div>
+
+<div class="login-overlay hidden" id="adminOverlay">
+  <div class="admin-card">
+    <div class="admin-header">
+      <h2 id="adminTitle">Manage Users</h2>
+      <button type="button" class="modal-close" onclick="closeAdmin()" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="admin-section-title" id="adminProjectsTitle">Projects</div>
+    <form class="admin-add-form" onsubmit="adminAddProject(event)">
+      <input type="text" id="newProjectName" placeholder="Project name" required>
+      <button type="submit" class="admin-create-btn" id="adminAddProjectBtn">Add Project</button>
+    </form>
+    <div class="admin-user-list" id="adminProjectList"></div>
+
+    <div class="admin-section-title" id="adminUsersTitle">Users</div>
+    <p style="font-size:.75rem;color:var(--sub);margin-top:-6px;margin-bottom:10px" id="adminUsersHelp">Users sign up themselves on the login screen. Use the dropdowns below to assign each user to a project, promote/demote, or remove.</p>
+    <div class="admin-user-list" id="adminUserList"></div>
+    <div class="login-error" id="adminError"></div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<div class="install-banner" id="installBanner">
+  <h4 id="installMsg">Install this app for quick access</h4>
+  <div class="btns">
+    <button class="btn btn-primary" onclick="installPWA()" id="installBtn" style="font-size:.75rem;padding:6px 14px">Install</button>
+    <button class="btn btn-ghost" onclick="document.getElementById('installBanner').classList.remove('show')" id="dismissBtn" style="font-size:.75rem;padding:6px 14px">Dismiss</button>
+  </div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ─────────── Supabase config ───────────
+// Replace these two values with your project's URL and anon key.
+// (Dashboard -> Project Settings -> API.)  The anon key is meant to be public;
+// row-level security policies in your DB protect the data.
+const SUPABASE_URL  = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON = 'YOUR_SUPABASE_ANON_KEY';
+
+if (!SUPABASE_URL || SUPABASE_URL.startsWith('YOUR_')) {
+  document.getElementById('loginError').textContent =
+    'Configuration missing — edit index.html and paste your Supabase URL/key.';
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
+window.supabase = supabase;   // expose for inline onclick handlers below
+</script>
+
+<script>
+/* ─────────── State ─────────── */
+var currentUser = null;          /* { id, email, full_name, is_admin, project_id, project_name } */
+var expenses = [];                /* live cache, kept in sync via realtime */
+var allProjects = [];             /* projects the current user can see (admin: all, supervisor: their own) */
+var realtimeChannel = null;
+var deferredPrompt = null;
+var authMode = 'signin';          /* 'signin' | 'signup' | 'magic' */
+var pendingReceiptFile = null;    /* File chosen in the form, applied on save */
+
+/* ─────────── PWA install ─────────── */
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  deferredPrompt = e;
+  setTimeout(function() { document.getElementById('installBanner').classList.add('show'); }, 3000);
+});
+function installPWA() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function() {
+    deferredPrompt = null;
+    document.getElementById('installBanner').classList.remove('show');
+  });
+}
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('sw.js').catch(function() {});
+  });
+}
+
+/* ─────────── i18n ─────────── */
+var dict = {
+  en: {
+    headerTitle: "Expense Tracker",
+    statTotalLabel: "Total", statPaidLabel: "Paid", statUnpaidLabel: "Unpaid", statPendingLabel: "Pending",
+    formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
+    lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
+    lblPaidBy: "Paid By", lblStatus: "Status", lblNotes: "Notes", lblReceipt: "Receipt photo",
+    saveBtnAdd: "Add", saveBtnUpdate: "Update", cancelBtn: "Cancel",
+    allExpensesLabel: "All Expenses", emptyMsg: "No expenses yet. Add one above.",
+    thDate: "Date", thDesc: "Description", thCat: "Category", thAmt: "Amount", thPaidBy: "Paid By",
+    thStatus: "Status", thNotes: "Notes", thReceipt: "Receipt",
+    resetBtn: "Reset", clearBtn: "Clear All", exportBtn: "Export",
+    catMaterials: "Materials", catLabor: "Labor", catEquipment: "Equipment", catPermits: "Permits",
+    catSubs: "Subcontractors", catTransport: "Transport", catUtilities: "Utilities", catMisc: "Misc",
+    stPaid: "Paid", stPending: "Pending", stUnpaid: "Unpaid",
+    filterAllCat: "All Categories", filterAllSt: "All Statuses", filterSearch: "Search...",
+    filterFromTitle: "From", filterToTitle: "To",
+    toastAdded: "Expense added", toastUpdated: "Expense updated", toastDeleted: "Expense deleted",
+    toastCleared: "All expenses cleared", toastNoExport: "Nothing to export", toastCSV: "CSV exported",
+    toastRenamed: "Project renamed", toastSaved: "Saved",
+    confirmClear: "Delete all visible expenses? This cannot be undone.", confirmDelete: "Delete this expense?",
+    promptRename: "Project name:", valMsg: "A description and valid amount are required.",
+    editTitle: "Edit", deleteTitle: "Delete",
+    installMsg: "Install for quick access", installBtn: "Install", dismissBtn: "Dismiss",
+    loginTitle: "Sign In", loginSub: "Email and password",
+    loginEmail: "Email", loginPassword: "Password (min 6)", loginSubmitSignIn: "Sign In",
+    loginSubmitSignUp: "Create account", loginSubmitMagic: "Send magic link",
+    loginTabSignIn: "Sign in", loginTabSignUp: "Sign up", loginTabMagic: "Magic link",
+    forgotBtn: "Forgot password?", forgotInfo: "Password reset email sent (check your inbox).",
+    magicInfo: "Magic-link email sent — open it on this device.", signupInfo: "Account created. Check your email if confirmation is required.",
+    loginFailed: "Authentication failed.", loginMissing: "Enter your email and password.",
+    logoutBtn: "Logout",
+    adminBtn: "Manage Users", adminTitle: "Manage Users",
+    adminProjectsTitle: "Projects", adminUsersTitle: "Users",
+    adminUsersHelp: "Users sign up themselves on the login screen. Use the dropdowns below to assign each user to a project, promote/demote, or remove.",
+    newProjectName: "Project name", adminAddProjectBtn: "Add Project",
+    adminProjectCreated: "Project added", adminProjectCreateFailed: "Could not add project",
+    adminProjectNameRequired: "Project name required",
+    adminRenameProject: "Rename", adminProjectRenamed: "Project renamed", adminProjectUpdateFailed: "Could not rename project",
+    adminProjectDeleted: "Project deleted", adminProjectDeleteFailed: "Could not delete project",
+    adminProjectAssigned: "Project assignment updated",
+    adminProjectNone: "— No project —", adminProjectAssign: "Assign to project",
+    adminNoProjects: "No projects yet — add one above",
+    adminDelete: "Delete", adminDeleted: "User deleted", adminDeleteFailed: "Could not delete user",
+    adminMakeAdmin: "Make admin", adminMakeWorker: "Make supervisor",
+    adminPromoted: "User promoted to admin", adminDemoted: "Admin demoted to supervisor",
+    adminUpdateFailed: "Could not update user", adminLoadFailed: "Could not load user list",
+    adminRoleTagAdmin: "Admin", adminRoleTagUser: "Supervisor",
+    confirmDeleteUser: "Delete user '{user}'? This removes their auth account and all their expenses.",
+    promptProjectName: "New name:", confirmDeleteProject: "Delete project '{name}'? All its expenses will be removed too.",
+    noProjectTitle: "No project assigned", noProjectMsg: "Ask an admin to assign you to a project before you can add expenses.",
+    dbOnline: "Online", dbOffline: "Offline",
+    receiptUploading: "Uploading receipt...", receiptFailed: "Could not upload receipt",
+    receiptOpen: "Open receipt", receiptNone: "—", receiptThumbAlt: "Receipt"
+  },
+  fr: {
+    headerTitle: "Suivi des Dépenses",
+    statTotalLabel: "Total", statPaidLabel: "Payé", statUnpaidLabel: "Impayé", statPendingLabel: "Attente",
+    formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
+    lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
+    lblPaidBy: "Payé par", lblStatus: "État", lblNotes: "Remarques", lblReceipt: "Photo du reçu",
+    saveBtnAdd: "Ajouter", saveBtnUpdate: "Mettre à jour", cancelBtn: "Annuler",
+    allExpensesLabel: "Toutes les dépenses", emptyMsg: "Aucune dépense. Ajoutez-en une.",
+    thDate: "Date", thDesc: "Description", thCat: "Catégorie", thAmt: "Montant", thPaidBy: "Payé par",
+    thStatus: "État", thNotes: "Remarques", thReceipt: "Reçu",
+    resetBtn: "Réinitialiser", clearBtn: "Tout effacer", exportBtn: "Exporter",
+    catMaterials: "Matériaux", catLabor: "Main-d’œuvre", catEquipment: "Équipement",
+    catPermits: "Permis", catSubs: "Sous-traitants", catTransport: "Transport", catUtilities: "Services", catMisc: "Divers",
+    stPaid: "Payé", stPending: "Attente", stUnpaid: "Impayé",
+    filterAllCat: "Toutes catégories", filterAllSt: "Tous états", filterSearch: "Rechercher...",
+    filterFromTitle: "Du", filterToTitle: "Au",
+    toastAdded: "Dépense ajoutée", toastUpdated: "Dépense mise à jour", toastDeleted: "Dépense supprimée",
+    toastCleared: "Tout effacé", toastNoExport: "Rien à exporter", toastCSV: "CSV exporté",
+    toastRenamed: "Projet renommé", toastSaved: "Enregistré",
+    confirmClear: "Supprimer toutes les dépenses visibles ? Irréversible.", confirmDelete: "Supprimer cette dépense ?",
+    promptRename: "Nom du projet :", valMsg: "Une description et un montant valide sont requis.",
+    editTitle: "Modifier", deleteTitle: "Supprimer",
+    installMsg: "Installer pour un accès rapide", installBtn: "Installer", dismissBtn: "Ignorer",
+    loginTitle: "Connexion", loginSub: "E-mail et mot de passe",
+    loginEmail: "E-mail", loginPassword: "Mot de passe (min 6)", loginSubmitSignIn: "Se connecter",
+    loginSubmitSignUp: "Créer un compte", loginSubmitMagic: "Envoyer le lien magique",
+    loginTabSignIn: "Connexion", loginTabSignUp: "Inscription", loginTabMagic: "Lien magique",
+    forgotBtn: "Mot de passe oublié ?", forgotInfo: "E-mail de réinitialisation envoyé (vérifiez votre boîte).",
+    magicInfo: "Lien magique envoyé — ouvrez-le sur cet appareil.",
+    signupInfo: "Compte créé. Vérifiez votre e-mail si une confirmation est requise.",
+    loginFailed: "Échec d'authentification.", loginMissing: "Saisissez votre e-mail et mot de passe.",
+    logoutBtn: "Déconnexion",
+    adminBtn: "Gérer les utilisateurs", adminTitle: "Gérer les utilisateurs",
+    adminProjectsTitle: "Projets", adminUsersTitle: "Utilisateurs",
+    adminUsersHelp: "Les utilisateurs s'inscrivent eux-mêmes via l'écran de connexion. Utilisez les menus ci-dessous pour les affecter à un projet, les promouvoir/rétrograder ou les supprimer.",
+    newProjectName: "Nom du projet", adminAddProjectBtn: "Ajouter un projet",
+    adminProjectCreated: "Projet ajouté", adminProjectCreateFailed: "Échec de l'ajout du projet",
+    adminProjectNameRequired: "Nom du projet requis",
+    adminRenameProject: "Renommer", adminProjectRenamed: "Projet renommé", adminProjectUpdateFailed: "Échec du renommage",
+    adminProjectDeleted: "Projet supprimé", adminProjectDeleteFailed: "Échec de la suppression du projet",
+    adminProjectAssigned: "Affectation mise à jour",
+    adminProjectNone: "— Aucun projet —", adminProjectAssign: "Affecter à un projet",
+    adminNoProjects: "Aucun projet — ajoutez-en un ci-dessus",
+    adminDelete: "Supprimer", adminDeleted: "Utilisateur supprimé", adminDeleteFailed: "Échec de la suppression",
+    adminMakeAdmin: "Promouvoir admin", adminMakeWorker: "Rétrograder",
+    adminPromoted: "Utilisateur promu admin", adminDemoted: "Admin rétrogradé",
+    adminUpdateFailed: "Échec de la mise à jour", adminLoadFailed: "Impossible de charger la liste",
+    adminRoleTagAdmin: "Admin", adminRoleTagUser: "Superviseur",
+    confirmDeleteUser: "Supprimer l'utilisateur « {user} » ? Son compte d'authentification et ses dépenses seront aussi supprimés.",
+    promptProjectName: "Nouveau nom :", confirmDeleteProject: "Supprimer le projet « {name} » ? Toutes ses dépenses seront aussi supprimées.",
+    noProjectTitle: "Aucun projet affecté", noProjectMsg: "Demandez à un admin de vous affecter à un projet avant d'ajouter des dépenses.",
+    dbOnline: "En ligne", dbOffline: "Hors ligne",
+    receiptUploading: "Envoi du reçu...", receiptFailed: "Impossible d'envoyer le reçu",
+    receiptOpen: "Voir le reçu", receiptNone: "—", receiptThumbAlt: "Reçu"
+  }
+};
+
+var currLang = 'en';
+function t(k) { return (dict[currLang] && dict[currLang][k]) || dict.en[k] || k; }
+
+function toggleLang() {
+  currLang = currLang === 'en' ? 'fr' : 'en';
+  try { localStorage.setItem('expense-tracker-lang', currLang); } catch(e) {}
+  applyLang();
+  render();
+  refreshAdminListsIfOpen();
+}
+
+function applyLang() {
+  var d = dict[currLang];
+  document.title = d.headerTitle + (currentUser && currentUser.project_name ? ' – ' + currentUser.project_name : '');
+  setText('headerTitle', d.headerTitle);
+  setText('statTotalLabel', d.statTotalLabel);
+  setText('statPaidLabel', d.statPaidLabel);
+  setText('statUnpaidLabel', d.statUnpaidLabel);
+  setText('statPendingLabel', d.statPendingLabel);
+
+  var ft = document.getElementById('formTitle');
+  if (ft) ft.textContent = (document.getElementById('editId').value) ? d.formTitleEdit : d.formTitleAdd;
+  setText('lblDesc', d.lblDesc);
+  setText('lblAmount', d.lblAmount);
+  setText('lblCategory', d.lblCategory);
+  setText('lblDate', d.lblDate);
+  setText('lblPaidBy', d.lblPaidBy);
+  setText('lblStatus', d.lblStatus);
+  setText('lblNotes', d.lblNotes);
+  setText('lblReceipt', d.lblReceipt);
+
+  var sb = document.getElementById('saveBtn');
+  if (sb) sb.textContent = (document.getElementById('editId').value) ? d.saveBtnUpdate : d.saveBtnAdd;
+  setText('cancelBtn', d.cancelBtn);
+
+  setText('allExpensesLabel', d.allExpensesLabel);
+  setText('emptyMsg', d.emptyMsg);
+  setText('thDate', d.thDate);
+  setText('thDesc', d.thDesc);
+  setText('thCat', d.thCat);
+  setText('thAmt', d.thAmt);
+  setText('thPaidBy', d.thPaidBy);
+  setText('thStatus', d.thStatus);
+  setText('thNotes', d.thNotes);
+  setText('thReceipt', d.thReceipt);
+  setText('resetBtn', d.resetBtn);
+  setText('clearBtn', d.clearBtn);
+  setText('exportBtn', d.exportBtn);
+  setText('logoutBtn', d.logoutBtn);
+
+  setText('langBtn', currLang === 'en' ? 'FR' : 'EN');
+
+  document.getElementById('filterSearch').placeholder = d.filterSearch;
+  document.getElementById('filterFrom').title = d.filterFromTitle;
+  document.getElementById('filterTo').title = d.filterToTitle;
+
+  setText('installMsg', d.installMsg);
+  setText('installBtn', d.installBtn);
+  setText('dismissBtn', d.dismissBtn);
+
+  setText('loginTitle', d.loginTitle);
+  setText('loginSub', d.loginSub);
+  setText('tabSignIn', d.loginTabSignIn);
+  setText('tabSignUp', d.loginTabSignUp);
+  setText('tabMagic', d.loginTabMagic);
+  setText('forgotBtn', d.forgotBtn);
+  document.getElementById('loginEmail').placeholder = d.loginEmail;
+  document.getElementById('loginPassword').placeholder = d.loginPassword;
+  updateAuthSubmitLabel();
+
+  setText('adminBtn', d.adminBtn);
+  setText('adminTitle', d.adminTitle);
+  setText('adminProjectsTitle', d.adminProjectsTitle);
+  setText('adminUsersTitle', d.adminUsersTitle);
+  setText('adminUsersHelp', d.adminUsersHelp);
+  setText('adminAddProjectBtn', d.adminAddProjectBtn);
+  document.getElementById('newProjectName').placeholder = d.newProjectName;
+
+  setText('noProjectTitle', d.noProjectTitle);
+  setText('noProjectMsg', d.noProjectMsg);
+
+  populateSelect('category', catOptions(), keepVal('category'));
+  populateSelect('status', statusOptions(), keepVal('status'));
+  populateSelect('filterCategory', filterCatOptions(), keepVal('filterCategory'));
+  populateSelect('filterStatus', filterStatusOptions(), keepVal('filterStatus'));
+
+  updateDbIndicator();
+}
+
+function catOptions() {
+  var d = dict[currLang];
+  return [
+    {v:'Materials',l:d.catMaterials},{v:'Labor',l:d.catLabor},{v:'Equipment',l:d.catEquipment},
+    {v:'Permits',l:d.catPermits},{v:'Subcontractors',l:d.catSubs},{v:'Transport',l:d.catTransport},
+    {v:'Utilities',l:d.catUtilities},{v:'Misc',l:d.catMisc}
+  ];
+}
+function statusOptions() {
+  var d = dict[currLang];
+  return [{v:'Paid',l:d.stPaid},{v:'Pending',l:d.stPending},{v:'Unpaid',l:d.stUnpaid}];
+}
+function filterCatOptions()    { return [{v:'',l:dict[currLang].filterAllCat}].concat(catOptions()); }
+function filterStatusOptions() { return [{v:'',l:dict[currLang].filterAllSt}].concat(statusOptions()); }
+function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
+function keepVal(id) { var el = document.getElementById(id); return el ? el.value : undefined; }
+function populateSelect(id, items, keep) {
+  var sel = document.getElementById(id); if (!sel) return;
+  sel.innerHTML = items.map(function(it) { return '<option value="' + esc(it.v) + '">' + esc(it.l) + '</option>'; }).join('');
+  if (keep !== undefined) sel.value = keep;
+}
+function displayCat(v) { var m = catOptions().find(function(o){return o.v===v;}); return m ? m.l : (v ? esc(v) : '—'); }
+function displayStatus(v) { var m = statusOptions().find(function(o){return o.v===v;}); return m ? m.l : (v ? esc(v) : '—'); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+/* ─────────── auth flow ─────────── */
+function switchAuthTab(mode) {
+  authMode = mode;
+  document.getElementById('tabSignIn').classList.toggle('active', mode === 'signin');
+  document.getElementById('tabSignUp').classList.toggle('active', mode === 'signup');
+  document.getElementById('tabMagic') .classList.toggle('active', mode === 'magic');
+  var pw = document.getElementById('loginPassword');
+  pw.classList.toggle('hidden', mode === 'magic');
+  pw.required = mode !== 'magic';
+  document.getElementById('forgotBtn').classList.toggle('hidden', mode !== 'signin');
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginInfo').classList.add('hidden');
+  updateAuthSubmitLabel();
+}
+function updateAuthSubmitLabel() {
+  var d = dict[currLang];
+  var btn = document.getElementById('loginSubmitBtn');
+  btn.textContent = authMode === 'signin' ? d.loginSubmitSignIn :
+                    authMode === 'signup' ? d.loginSubmitSignUp :
+                    d.loginSubmitMagic;
+}
+window.switchAuthTab = switchAuthTab;
+
+async function doAuth(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  var email = document.getElementById('loginEmail').value.trim();
+  var password = document.getElementById('loginPassword').value;
+  var err = document.getElementById('loginError');
+  var info = document.getElementById('loginInfo');
+  var btn = document.getElementById('loginSubmitBtn');
+  err.textContent = ''; info.classList.add('hidden');
+
+  if (!email) { err.textContent = t('loginMissing'); return; }
+  if (authMode !== 'magic' && password.length < 6) { err.textContent = t('loginMissing'); return; }
+
+  btn.disabled = true;
+  try {
+    if (authMode === 'signin') {
+      var { error } = await window.supabase.auth.signInWithPassword({ email: email, password: password });
+      if (error) throw error;
+    } else if (authMode === 'signup') {
+      var { error } = await window.supabase.auth.signUp({ email: email, password: password });
+      if (error) throw error;
+      info.textContent = t('signupInfo'); info.classList.remove('hidden');
+    } else { /* magic */
+      var { error } = await window.supabase.auth.signInWithOtp({ email: email });
+      if (error) throw error;
+      info.textContent = t('magicInfo'); info.classList.remove('hidden');
+    }
+  } catch (e) {
+    err.textContent = (e && e.message) || t('loginFailed');
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.doAuth = doAuth;
+
+async function doPasswordReset() {
+  var email = document.getElementById('loginEmail').value.trim();
+  var err = document.getElementById('loginError');
+  var info = document.getElementById('loginInfo');
+  err.textContent = ''; info.classList.add('hidden');
+  if (!email) { err.textContent = t('loginMissing'); return; }
+  var { error } = await window.supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  if (error) { err.textContent = error.message; return; }
+  info.textContent = t('forgotInfo'); info.classList.remove('hidden');
+}
+window.doPasswordReset = doPasswordReset;
+
+async function doLogout() {
+  await window.supabase.auth.signOut();
+  /* onAuthStateChange handles UI reset */
+}
+window.doLogout = doLogout;
+
+/* ─────────── session bootstrap ─────────── */
+async function loadCurrentUser() {
+  var { data: { session } } = await window.supabase.auth.getSession();
+  if (!session) {
+    currentUser = null;
+    showLogin();
+    updateUserUI();
+    setStorageMode(false);
+    return;
+  }
+  setStorageMode(true);
+
+  // Try to claim first-admin if no admin exists yet (idempotent on the server)
+  await window.supabase.rpc('claim_first_admin').catch(function(){});
+
+  var uid = session.user.id;
+  var { data: prof } = await window.supabase
+    .from('profiles')
+    .select('id, full_name, is_admin, project_id, projects(name)')
+    .eq('id', uid)
+    .single();
+
+  if (!prof) {
+    /* trigger handle_new_user should have created this row, but just in case: */
+    await window.supabase.from('profiles').insert({ id: uid }).catch(function(){});
+    prof = { id: uid, is_admin: false, project_id: null, projects: null };
+  }
+
+  currentUser = {
+    id: uid,
+    email: session.user.email,
+    full_name: prof.full_name || session.user.email,
+    is_admin: !!prof.is_admin,
+    project_id: prof.project_id || null,
+    project_name: prof.projects ? prof.projects.name : null
+  };
+
+  hideLogin();
+  updateUserUI();
+  document.getElementById('projectName').firstChild.textContent = currentUser.project_name || (currentUser.is_admin ? '—' : t('noProjectTitle'));
+  document.getElementById('date').value = new Date().toISOString().split('T')[0];
+  applyLang();
+  updateNoProjectBanner();
+  await Promise.all([loadProjects(), loadExpenses()]);
+  subscribeRealtime();
+  render();
+}
+
+async function loadProjects() {
+  var { data, error } = await window.supabase.from('projects').select('id, name').order('name');
+  allProjects = error ? [] : (data || []);
+}
+
+async function loadExpenses() {
+  var { data, error } = await window.supabase
+    .from('expenses')
+    .select('*')
+    .order('date', { ascending: false })
+    .order('id', { ascending: false });
+  expenses = error ? [] : (data || []);
+}
+
+function subscribeRealtime() {
+  if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+  realtimeChannel = window.supabase
+    .channel('expenses-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, function(payload) {
+      // RLS already filtered what we can see; just sync the local cache
+      if (payload.eventType === 'INSERT') {
+        if (!expenses.find(function(e){ return e.id === payload.new.id; })) expenses.unshift(payload.new);
+      } else if (payload.eventType === 'UPDATE') {
+        var idx = expenses.findIndex(function(e){ return e.id === payload.new.id; });
+        if (idx >= 0) expenses[idx] = payload.new;
+        else expenses.unshift(payload.new);
+      } else if (payload.eventType === 'DELETE') {
+        expenses = expenses.filter(function(e){ return e.id !== payload.old.id; });
+      }
+      render();
+    })
+    .subscribe();
+}
+
+window.supabase.auth.onAuthStateChange(function(event, _session) {
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') {
+    loadCurrentUser();
+  } else if (event === 'SIGNED_OUT') {
+    currentUser = null; expenses = []; allProjects = [];
+    if (realtimeChannel) { window.supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+    setStorageMode(false);
+    updateUserUI();
+    render();
+    showLogin();
+  }
+});
+
+function showLogin() {
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  setTimeout(function(){ document.getElementById('loginEmail').focus(); }, 50);
+}
+function hideLogin() {
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginInfo').classList.add('hidden');
+}
+function updateUserUI() {
+  var pill = document.getElementById('userPill');
+  var logout = document.getElementById('logoutBtn');
+  var adminBtn = document.getElementById('adminBtn');
+  if (currentUser) {
+    pill.textContent = currentUser.full_name || currentUser.email;
+    pill.classList.remove('hidden');
+    pill.classList.toggle('admin', !!currentUser.is_admin);
+    logout.classList.remove('hidden');
+    adminBtn.classList.toggle('hidden', !currentUser.is_admin);
+  } else {
+    pill.classList.add('hidden'); pill.classList.remove('admin');
+    logout.classList.add('hidden');
+    adminBtn.classList.add('hidden');
+  }
+}
+function setStorageMode(online) {
+  // Frontend has no localStorage fallback in Tier 3 — Supabase or nothing.
+  // We just reflect connectivity in the indicator.
+  var dot = document.querySelector('#dbIndicator .status-dot');
+  var lbl = document.getElementById('dbLabel');
+  var btn = document.getElementById('dbIndicator');
+  if (online) { dot.className = 'status-dot dot-server'; lbl.textContent = t('dbOnline'); btn.className = 'btn-db db-server'; }
+  else { dot.className = 'status-dot dot-local'; lbl.textContent = t('dbOffline'); btn.className = 'btn-db db-local'; }
+}
+function updateDbIndicator() { setStorageMode(!!currentUser); }
+function updateNoProjectBanner() {
+  var banner = document.getElementById('noProjectBanner');
+  var formSection = document.getElementById('formTitle').closest('.section');
+  var noProj = currentUser && !currentUser.is_admin && !currentUser.project_id;
+  banner.classList.toggle('hidden', !noProj);
+  formSection.classList.toggle('hidden', noProj);
+}
+
+/* ─────────── currency / formatting ─────────── */
+function fmtAmount(n) {
+  var parts = Number(n || 0).toFixed(2).split('.');
+  var intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  var dec = parts[1];
+  return currLang === 'fr' ? (intPart.replace(/,/g,' ') + ',' + dec + ' FCFA') : ('$' + intPart + '.' + dec);
+}
+
+/* ─────────── toast ─────────── */
+function toast(msg) {
+  var tc = document.getElementById('toastContainer');
+  var div = document.createElement('div'); div.className = 'toast'; div.textContent = msg; tc.appendChild(div);
+  requestAnimationFrame(function(){ div.classList.add('visible'); });
+  setTimeout(function(){ div.classList.remove('visible'); setTimeout(function(){ if (div.parentNode) div.parentNode.removeChild(div); }, 300); }, 2200);
+}
+window.toast = toast;
+
+/* ─────────── expense CRUD ─────────── */
+async function saveExpense() {
+  var desc = document.getElementById('desc').value.trim();
+  var amount = parseFloat(document.getElementById('amount').value);
+  if (!desc || isNaN(amount) || amount <= 0) { toast(t('valMsg')); return; }
+
+  var payload = {
+    description: desc.slice(0, 200),
+    amount: amount,
+    category: document.getElementById('category').value,
+    date: document.getElementById('date').value || new Date().toISOString().split('T')[0],
+    paid_by: document.getElementById('paidBy').value.trim().slice(0, 100),
+    status: document.getElementById('status').value,
+    notes: document.getElementById('notes').value.trim().slice(0, 500)
+  };
+  var editId = document.getElementById('editId').value;
+  var fileInput = document.getElementById('receipt');
+  var file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+  if (!editId) {
+    if (!currentUser.project_id && !currentUser.is_admin) { toast(t('noProjectMsg')); return; }
+    payload.user_id = currentUser.id;
+    payload.project_id = currentUser.project_id;  /* admins without a project can't add via UI; assign yourself first */
+    if (!payload.project_id) { toast(t('noProjectMsg')); return; }
+    var { data, error } = await window.supabase.from('expenses').insert(payload).select().single();
+    if (error) { toast(error.message); return; }
+    if (file) await uploadReceipt(data.id, file);
+    cancelEdit();
+    toast(t('toastAdded'));
+  } else {
+    var { error } = await window.supabase.from('expenses').update(payload).eq('id', editId);
+    if (error) { toast(error.message); return; }
+    if (file) await uploadReceipt(editId, file);
+    cancelEdit();
+    toast(t('toastUpdated'));
+  }
+}
+window.saveExpense = saveExpense;
+
+async function uploadReceipt(expenseId, file) {
+  if (!file) return;
+  toast(t('receiptUploading'));
+  var ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  var path = currentUser.id + '/' + expenseId + '.' + ext;
+  var { error: upErr } = await window.supabase.storage.from('receipts').upload(path, file, { upsert: true, contentType: file.type });
+  if (upErr) { toast(t('receiptFailed') + ': ' + upErr.message); return; }
+  var { error: dbErr } = await window.supabase.from('expenses').update({ receipt_path: path }).eq('id', expenseId);
+  if (dbErr) toast(t('receiptFailed') + ': ' + dbErr.message);
+}
+
+async function openReceipt(path) {
+  if (!path) return;
+  var { data, error } = await window.supabase.storage.from('receipts').createSignedUrl(path, 60);
+  if (error) { toast(t('receiptFailed')); return; }
+  window.open(data.signedUrl, '_blank');
+}
+window.openReceipt = openReceipt;
+
+function editExpense(id) {
+  var e = expenses.find(function(x){ return x.id === id; });
+  if (!e) return;
+  document.getElementById('desc').value = e.description || '';
+  document.getElementById('amount').value = e.amount;
+  document.getElementById('category').value = e.category || 'Materials';
+  document.getElementById('date').value = e.date || new Date().toISOString().split('T')[0];
+  document.getElementById('paidBy').value = e.paid_by || '';
+  document.getElementById('status').value = e.status || 'Paid';
+  document.getElementById('notes').value = e.notes || '';
+  document.getElementById('editId').value = e.id;
+  document.getElementById('receipt').value = '';
+  setText('formTitle', t('formTitleEdit'));
+  setText('saveBtn', t('saveBtnUpdate'));
+  document.getElementById('cancelBtn').classList.remove('hidden');
+  document.getElementById('desc').focus();
+}
+window.editExpense = editExpense;
+
+function cancelEdit() {
+  document.getElementById('desc').value = '';
+  document.getElementById('amount').value = '';
+  document.getElementById('category').value = 'Materials';
+  document.getElementById('date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('paidBy').value = '';
+  document.getElementById('status').value = 'Paid';
+  document.getElementById('notes').value = '';
+  document.getElementById('editId').value = '';
+  document.getElementById('receipt').value = '';
+  setText('formTitle', t('formTitleAdd'));
+  setText('saveBtn', t('saveBtnAdd'));
+  document.getElementById('cancelBtn').classList.add('hidden');
+}
+window.cancelEdit = cancelEdit;
+
+async function deleteExpense(id) {
+  if (!confirm(t('confirmDelete'))) return;
+  var e = expenses.find(function(x){ return x.id === id; });
+  if (e && e.receipt_path) await window.supabase.storage.from('receipts').remove([e.receipt_path]).catch(function(){});
+  var { error } = await window.supabase.from('expenses').delete().eq('id', id);
+  if (error) { toast(error.message); return; }
+  if (document.getElementById('editId').value === id) cancelEdit();
+  toast(t('toastDeleted'));
+}
+window.deleteExpense = deleteExpense;
+
+async function clearAll() {
+  if (!confirm(t('confirmClear'))) return;
+  /* RLS scopes the DELETE: supervisors clear only their own project's rows; admins clear everything visible */
+  var visibleIds = getFiltered().map(function(e){ return e.id; });
+  if (visibleIds.length === 0) { toast(t('toastNoExport')); return; }
+  var { error } = await window.supabase.from('expenses').delete().in('id', visibleIds);
+  if (error) { toast(error.message); return; }
+  toast(t('toastCleared'));
+}
+window.clearAll = clearAll;
+
+async function renameCurrentProject() {
+  if (!currentUser || !currentUser.is_admin || !currentUser.project_id) return;
+  var name = prompt(t('promptRename'), currentUser.project_name || '');
+  if (!name || !name.trim()) return;
+  var { error } = await window.supabase.from('projects').update({ name: name.trim() }).eq('id', currentUser.project_id);
+  if (error) { toast(error.message); return; }
+  currentUser.project_name = name.trim();
+  document.getElementById('projectName').firstChild.textContent = currentUser.project_name;
+  toast(t('toastRenamed'));
+}
+window.renameCurrentProject = renameCurrentProject;
+
+/* ─────────── filters / render ─────────── */
+function clearFilters() {
+  ['filterCategory','filterStatus','filterFrom','filterTo','filterSearch'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+}
+window.clearFilters = clearFilters;
+
+function getFiltered() {
+  var cat    = document.getElementById('filterCategory').value;
+  var st     = document.getElementById('filterStatus').value;
+  var from   = document.getElementById('filterFrom').value;
+  var to     = document.getElementById('filterTo').value;
+  var search = (document.getElementById('filterSearch').value || '').toLowerCase();
+  return expenses
+    .filter(function(e){ return !cat    || e.category === cat; })
+    .filter(function(e){ return !st     || e.status   === st; })
+    .filter(function(e){ return !from   || e.date     >= from; })
+    .filter(function(e){ return !to     || e.date     <= to; })
+    .filter(function(e){
+      if (!search) return true;
+      var d = (e.description || '').toLowerCase();
+      var p = (e.paid_by     || '').toLowerCase();
+      var n = (e.notes       || '').toLowerCase();
+      return d.indexOf(search) !== -1 || p.indexOf(search) !== -1 || n.indexOf(search) !== -1;
+    })
+    .sort(function(a, b) {
+      if ((a.date || '') === (b.date || '')) return 0;
+      return (b.date || '') > (a.date || '') ? 1 : -1;
+    });
+}
+
+function render() {
+  var filtered = getFiltered();
+  var total = expenses.reduce(function(s, e){ return s + Number(e.amount || 0); }, 0);
+  var paid    = expenses.filter(function(e){return e.status==='Paid';}   ).reduce(function(s,e){return s+Number(e.amount||0);},0);
+  var unpaid  = expenses.filter(function(e){return e.status==='Unpaid';} ).reduce(function(s,e){return s+Number(e.amount||0);},0);
+  var pending = expenses.filter(function(e){return e.status==='Pending';}).reduce(function(s,e){return s+Number(e.amount||0);},0);
+
+  setText('statTotal',   fmtAmount(total));
+  setText('statPaid',    fmtAmount(paid));
+  setText('statUnpaid',  fmtAmount(unpaid));
+  setText('statPending', fmtAmount(pending));
+  setText('countLabel', filtered.length);
+
+  var tbody = document.getElementById('tableBody');
+  var empty = document.getElementById('emptyMsg');
+  if (filtered.length === 0) { tbody.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  var d = dict[currLang];
+  var et = t('editTitle'); var dt = t('deleteTitle');
+  tbody.innerHTML = filtered.map(function(e) {
+    var receipt = e.receipt_path
+      ? '<button type="button" class="receipt-link" onclick="openReceipt(\'' + escAttr(e.receipt_path) + '\')" title="' + t('receiptOpen') + '">📎</button>'
+      : t('receiptNone');
+    return '<tr>' +
+      '<td data-label="' + d.thDate + '">' + esc(e.date || '—') + '</td>' +
+      '<td data-label="' + d.thDesc + '">' + esc(e.description || '') + '</td>' +
+      '<td data-label="' + d.thCat  + '">' + displayCat(e.category) + '</td>' +
+      '<td class="amount-cell" data-label="' + d.thAmt + '">' + fmtAmount(e.amount || 0) + '</td>' +
+      '<td data-label="' + d.thPaidBy + '">' + (e.paid_by ? esc(e.paid_by) : '—') + '</td>' +
+      '<td data-label="' + d.thStatus + '">' + badge(e.status) + '</td>' +
+      '<td class="notes-cell" data-label="' + d.thNotes + '" title="' + escAttr(e.notes || '') + '">' + (e.notes ? esc(e.notes) : '—') + '</td>' +
+      '<td data-label="' + d.thReceipt + '">' + receipt + '</td>' +
+      '<td class="actions-cell"><div class="row-actions">' +
+        '<button class="icon-btn" onclick="editExpense(\'' + escAttr(e.id) + '\')" title="' + et + '">✎</button>' +
+        '<button class="icon-btn danger" onclick="deleteExpense(\'' + escAttr(e.id) + '\')" title="' + dt + '">✕</button>' +
+      '</div></td></tr>';
+  }).join('');
+}
+window.render = render;
+
+function badge(st) {
+  var cls = st === 'Paid' ? 'badge-paid' : st === 'Pending' ? 'badge-pending' : 'badge-unpaid';
+  return '<span class="badge ' + cls + '">' + displayStatus(st) + '</span>';
+}
+
+/* ─────────── CSV export ─────────── */
+function exportCSV() {
+  var visible = getFiltered();
+  if (visible.length === 0) { toast(t('toastNoExport')); return; }
+  var d = dict[currLang];
+  var header = [d.thDate, d.thDesc, d.thCat, d.thAmt, d.thPaidBy, d.thStatus, d.thNotes].join(',');
+  var rows = visible.map(function(e) {
+    return [
+      e.date || '',
+      '"' + ((e.description || '').replace(/"/g,'""')) + '"',
+      '"' + ((displayCat(e.category) || '').replace(/"/g,'""')) + '"',
+      Number(e.amount || 0).toFixed(2),
+      '"' + ((e.paid_by || '').replace(/"/g,'""')) + '"',
+      '"' + ((displayStatus(e.status) || '').replace(/"/g,'""')) + '"',
+      '"' + ((e.notes || '').replace(/"/g,'""')) + '"'
+    ].join(',');
+  });
+  var csv = [header].concat(rows).join('\n');
+  var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = ((currentUser && currentUser.project_name) || 'expenses').replace(/[^a-z0-9_-]/gi, '_') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(t('toastCSV'));
+}
+window.exportCSV = exportCSV;
+
+/* ─────────── admin panel ─────────── */
+function openAdmin() {
+  if (!currentUser || !currentUser.is_admin) return;
+  document.getElementById('adminError').textContent = '';
+  document.getElementById('adminOverlay').classList.remove('hidden');
+  refreshAdminProjectList();
+}
+window.openAdmin = openAdmin;
+
+function closeAdmin() {
+  document.getElementById('adminOverlay').classList.add('hidden');
+  document.getElementById('newProjectName').value = '';
+  document.getElementById('adminError').textContent = '';
+}
+window.closeAdmin = closeAdmin;
+
+function setAdminError(msg) { document.getElementById('adminError').textContent = msg || ''; }
+
+function refreshAdminListsIfOpen() {
+  var ov = document.getElementById('adminOverlay');
+  if (ov && !ov.classList.contains('hidden')) refreshAdminProjectList();
+}
+
+async function refreshAdminProjectList() {
+  var { data, error } = await window.supabase.from('projects').select('id, name').order('name');
+  if (error) { setAdminError(t('adminLoadFailed')); return; }
+  allProjects = data || [];
+  var list = document.getElementById('adminProjectList');
+  if (allProjects.length === 0) {
+    list.innerHTML = '<div class="admin-user-row"><span class="name" style="color:var(--sub)">' + t('adminNoProjects') + '</span></div>';
+  } else {
+    list.innerHTML = allProjects.map(function(p) {
+      return '<div class="admin-user-row">' +
+        '<span class="name">' + esc(p.name) + '</span>' +
+        '<div class="actions">' +
+          '<button type="button" onclick="adminRenameProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminRenameProject') + '</button>' +
+          '<button type="button" class="danger" onclick="adminDeleteProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminDelete') + '</button>' +
+        '</div></div>';
+    }).join('');
+  }
+  refreshAdminUserList();
+}
+
+async function adminAddProject(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  setAdminError('');
+  var name = document.getElementById('newProjectName').value.trim();
+  if (!name) { setAdminError(t('adminProjectNameRequired')); return; }
+  var { error } = await window.supabase.from('projects').insert({ name: name, created_by: currentUser.id });
+  if (error) { setAdminError(error.message); return; }
+  document.getElementById('newProjectName').value = '';
+  refreshAdminProjectList();
+  toast(t('adminProjectCreated'));
+}
+window.adminAddProject = adminAddProject;
+
+async function adminRenameProject(pid, currentName) {
+  var name = prompt(t('promptProjectName'), currentName);
+  if (!name || !name.trim()) return;
+  var { error } = await window.supabase.from('projects').update({ name: name.trim() }).eq('id', pid);
+  if (error) { setAdminError(error.message); return; }
+  if (currentUser.project_id === pid) {
+    currentUser.project_name = name.trim();
+    document.getElementById('projectName').firstChild.textContent = name.trim();
+  }
+  refreshAdminProjectList();
+  toast(t('adminProjectRenamed'));
+}
+window.adminRenameProject = adminRenameProject;
+
+async function adminDeleteProject(pid, name) {
+  if (!confirm(t('confirmDeleteProject').replace('{name}', name))) return;
+  var { error } = await window.supabase.from('projects').delete().eq('id', pid);
+  if (error) { setAdminError(error.message); return; }
+  refreshAdminProjectList();
+  loadExpenses().then(render);
+  toast(t('adminProjectDeleted'));
+}
+window.adminDeleteProject = adminDeleteProject;
+
+async function refreshAdminUserList() {
+  var { data: users, error } = await window.supabase
+    .from('profiles')
+    .select('id, full_name, is_admin, project_id, projects(name)')
+    .order('full_name');
+  if (error) { setAdminError(t('adminLoadFailed')); return; }
+  /* enrich with email via auth.users — only available to admins through a view; fallback to id */
+  var list = document.getElementById('adminUserList');
+  list.innerHTML = (users || []).map(function(u) {
+    var isMe = currentUser && u.id === currentUser.id;
+    var roleClass = u.is_admin ? 'role-admin' : 'role-user';
+    var roleLabel = u.is_admin ? t('adminRoleTagAdmin') : t('adminRoleTagUser');
+    var toggleLabel = u.is_admin ? t('adminMakeWorker') : t('adminMakeAdmin');
+    var deleteDisabled = isMe ? 'disabled' : '';
+    var demoteDisabled = (isMe && u.is_admin) ? 'disabled' : '';
+    var displayName = u.full_name || u.id.slice(0, 8) + '…';
+    var projectOptions = '<option value="">' + t('adminProjectNone') + '</option>' +
+      allProjects.map(function(p) {
+        var sel = (u.project_id === p.id) ? ' selected' : '';
+        return '<option value="' + escAttr(p.id) + '"' + sel + '>' + esc(p.name) + '</option>';
+      }).join('');
+    return '<div class="admin-user-row">' +
+      '<span class="name">' + esc(displayName) + '</span>' +
+      '<span class="role-tag ' + roleClass + '">' + roleLabel + '</span>' +
+      '<select onchange="adminAssignProject(\'' + escAttr(u.id) + '\', this.value)" title="' + t('adminProjectAssign') + '">' + projectOptions + '</select>' +
+      '<div class="actions">' +
+        '<button type="button" ' + demoteDisabled + ' onclick="adminToggleAdmin(\'' + escAttr(u.id) + '\',' + (!u.is_admin) + ')">' + toggleLabel + '</button>' +
+      '</div></div>';
+  }).join('');
+}
+window.refreshAdminUserList = refreshAdminUserList;
+
+async function adminAssignProject(uid, projectId) {
+  var { error } = await window.supabase.rpc('assign_user_project', { target: uid, project: projectId || null });
+  if (error) { setAdminError(error.message); return; }
+  refreshAdminUserList();
+  toast(t('adminProjectAssigned'));
+}
+window.adminAssignProject = adminAssignProject;
+
+async function adminToggleAdmin(uid, makeAdmin) {
+  var { error } = await window.supabase.rpc('set_user_admin', { target: uid, make_admin: !!makeAdmin });
+  if (error) { setAdminError(error.message); return; }
+  refreshAdminUserList();
+  toast(makeAdmin ? t('adminPromoted') : t('adminDemoted'));
+}
+window.adminToggleAdmin = adminToggleAdmin;
+
+/* ─────────── init ─────────── */
+try { currLang = localStorage.getItem('expense-tracker-lang') || 'en'; } catch(e) {}
+applyLang();
+loadCurrentUser();
+</script>
+
+</body>
+</html>
