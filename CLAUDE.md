@@ -87,6 +87,8 @@ Receipt blobs are queued **inline** on the insert/update op (no separate `upload
 - `<script type="module">` (around line 400) — only sets up the Supabase client and exposes it as `window.supabase` so the classic script can use it.
 - `<script>` (classic, runs after) — all app code. Inline `onclick="..."` handlers in the markup require their functions to be on `window` (see the many `window.foo = foo` lines throughout). When adding a new handler invoked from inline HTML, **assign it to `window`** or it will silently break.
 
+**Critical timing rule:** module scripts are *deferred* (run AFTER the classic script). The classic script therefore must NOT touch `window.supabase` at the top level — `window.supabase` is undefined when the classic script executes. App startup that needs Supabase (e.g. `onAuthStateChange` registration) lives inside `function __startApp()` exposed on `window`; the module calls `window.__startApp()` after setting `window.supabase`. New top-level code in the classic script must follow the same pattern, or be inside a function called later.
+
 State is held in module-level `var` globals (`currentUser`, `expenses`, `allProjects`, `realtimeChannel`). There's no framework, no virtual DOM, no router — `render()` rebuilds the table HTML from the current `expenses` array and the active filters.
 
 ### i18n
