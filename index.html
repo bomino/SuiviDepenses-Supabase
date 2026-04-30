@@ -878,7 +878,13 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, function(payload) {
       // RLS already filtered what we can see; sync the local cache
       if (payload.eventType === 'INSERT') {
-        if (!expenses.find(function(e){ return e.id === payload.new.id; })) expenses.unshift(payload.new);
+        // Dedupe: if there's an optimistic row with the same client_id, replace it in place.
+        var cidIdx = payload.new.client_id ? expenses.findIndex(function(e){ return e._client_id === payload.new.client_id; }) : -1;
+        if (cidIdx >= 0) {
+          expenses[cidIdx] = payload.new;
+        } else if (!expenses.find(function(e){ return e.id === payload.new.id; })) {
+          expenses.unshift(payload.new);
+        }
       } else if (payload.eventType === 'UPDATE') {
         var idx = expenses.findIndex(function(e){ return e.id === payload.new.id; });
         if (idx >= 0) expenses[idx] = payload.new;
@@ -1104,6 +1110,96 @@ async function routedWrite(opSpec, directFn) {
   var id = await idbAddOp(op);
   op.id = id;
   return { ok: true, fromQueue: true, op: op };
+}
+
+/* ─────────── Queue replay ─────────── */
+var replayInFlight = false;
+
+async function replayQueue() {
+  if (replayInFlight) return;
+  if (navigator.onLine === false) return;
+  replayInFlight = true;
+  try {
+    var ops = await idbListOps();
+    // FIFO by IDB autoincrement id
+    ops.sort(function(a,b){ return a.id - b.id; });
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      try {
+        await replayOne(op);
+        await idbDeleteOp(op.id);
+      } catch (err) {
+        if (isNetworkError(err)) {
+          // Stop the drain; will retry on next reconnect
+          break;
+        }
+        // Server-side rejection — mark and keep so the user can retry/delete
+        await idbUpdateOp(op.id, {
+          attempts: (op.attempts || 0) + 1,
+          last_error: (err && err.message) || String(err)
+        });
+      }
+    }
+    // Refresh the summary after a drain
+    await loadProjectSummary();
+    render();
+    updateSyncIndicator();
+  } finally {
+    replayInFlight = false;
+  }
+}
+
+async function replayOne(op) {
+  if (op.op_type === 'insert') {
+    // Idempotent insert via on conflict (client_id) do nothing — using upsert with onConflict
+    var payload = Object.assign({}, op.payload, { client_id: op.client_id });
+    var ins = await window.supabase
+      .from('expenses')
+      .upsert(payload, { onConflict: 'client_id', ignoreDuplicates: false })
+      .select()
+      .single();
+    if (ins.error) throw ins.error;
+    var realId = ins.data.id;
+    // Replace the optimistic row in the local cache
+    var idx = expenses.findIndex(function(e){ return e._client_id === op.client_id; });
+    if (idx >= 0) expenses[idx] = ins.data;
+    if (op.blob) {
+      var path = currentUser.id + '/' + realId + '.' + (op.ext || 'jpg');
+      var up = await window.supabase.storage.from('receipts').upload(path, op.blob, { upsert: true, contentType: op.mime || 'image/jpeg' });
+      if (up.error) throw up.error;
+      var rp = await window.supabase.from('expenses').update({ receipt_path: path }).eq('id', realId);
+      if (rp.error) throw rp.error;
+    }
+    return;
+  }
+  if (op.op_type === 'update') {
+    var upd = await window.supabase.from('expenses').update(op.payload).eq('id', op.target_id);
+    if (upd.error) throw upd.error;
+    if (op.blob) {
+      var path = currentUser.id + '/' + op.target_id + '.' + (op.ext || 'jpg');
+      var up = await window.supabase.storage.from('receipts').upload(path, op.blob, { upsert: true, contentType: op.mime || 'image/jpeg' });
+      if (up.error) throw up.error;
+      var rp = await window.supabase.from('expenses').update({ receipt_path: path }).eq('id', op.target_id);
+      if (rp.error) throw rp.error;
+    }
+    return;
+  }
+  if (op.op_type === 'delete') {
+    // Receipt cleanup is best-effort; ignore errors
+    var existing = expenses.find(function(e){ return e.id === op.target_id; });
+    if (existing && existing.receipt_path) {
+      await window.supabase.storage.from('receipts').remove([existing.receipt_path]).catch(function(){});
+    }
+    var del = await window.supabase.from('expenses').delete().eq('id', op.target_id);
+    if (del.error) throw del.error;
+    return;
+  }
+  throw new Error('Unknown op_type: ' + op.op_type);
+}
+
+function updateSyncIndicator() {
+  // Placeholder — Task 14 implements the visible counter
+  if (typeof renderSyncCounter === 'function') renderSyncCounter();
 }
 
 /* ─────────── expense CRUD ─────────── */
