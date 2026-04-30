@@ -481,6 +481,7 @@ var dict = {
     adminAlertPct: "Alert at %",
     adminBudgetSave: "Save",
     adminBudgetSaved: "Budget saved",
+    adminBudgetInvalid: "Invalid budget",
     budgetStaleTooltip: "Pending sync — last known total",
     formTitleAdd: "Add Expense", formTitleEdit: "Edit Expense",
     lblDesc: "Description *", lblAmount: "Amount *", lblCategory: "Category", lblDate: "Date",
@@ -542,6 +543,7 @@ var dict = {
     adminAlertPct: "Alerte à %",
     adminBudgetSave: "Enregistrer",
     adminBudgetSaved: "Budget enregistré",
+    adminBudgetInvalid: "Budget invalide",
     budgetStaleTooltip: "Synchronisation en attente — dernier total connu",
     formTitleAdd: "Ajouter une dépense", formTitleEdit: "Modifier la dépense",
     lblDesc: "Description *", lblAmount: "Montant *", lblCategory: "Catégorie", lblDate: "Date",
@@ -1278,7 +1280,7 @@ function refreshAdminListsIfOpen() {
 }
 
 async function refreshAdminProjectList() {
-  var { data, error } = await window.supabase.from('projects').select('id, name').order('name');
+  var { data, error } = await window.supabase.from('projects').select('id, name, budget_amount, budget_alert_pct').order('name');
   if (error) { setAdminError(t('adminLoadFailed')); return; }
   allProjects = data || [];
   var list = document.getElementById('adminProjectList');
@@ -1288,7 +1290,10 @@ async function refreshAdminProjectList() {
     list.innerHTML = allProjects.map(function(p) {
       return '<div class="admin-user-row">' +
         '<span class="name">' + esc(p.name) + '</span>' +
+        '<input type="number" min="0" step="0.01" placeholder="' + t('adminBudgetInput') + '" id="bud_' + escAttr(p.id) + '" value="' + (p.budget_amount == null ? '' : esc(String(p.budget_amount))) + '" style="width:110px">' +
+        '<input type="number" min="0" max="100" step="1" title="' + t('adminAlertPct') + '" id="alr_' + escAttr(p.id) + '" value="' + (p.budget_alert_pct == null ? 80 : esc(String(p.budget_alert_pct))) + '" style="width:70px">' +
         '<div class="actions">' +
+          '<button type="button" onclick="adminSaveBudget(\'' + escAttr(p.id) + '\', document.getElementById(\'bud_' + escAttr(p.id) + '\').value, document.getElementById(\'alr_' + escAttr(p.id) + '\').value)">' + t('adminBudgetSave') + '</button>' +
           '<button type="button" onclick="adminRenameProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminRenameProject') + '</button>' +
           '<button type="button" class="danger" onclick="adminDeleteProject(\'' + escAttr(p.id) + '\',\'' + escAttr(p.name) + '\')">' + t('adminDelete') + '</button>' +
         '</div></div>';
@@ -1333,6 +1338,27 @@ async function adminDeleteProject(pid, name) {
   toast(t('adminProjectDeleted'));
 }
 window.adminDeleteProject = adminDeleteProject;
+
+async function adminSaveBudget(pid, budgetStr, alertStr) {
+  var trimmed = (budgetStr || '').trim();
+  var budget = trimmed === '' ? null : Number(trimmed);
+  if (budget !== null && (isNaN(budget) || budget < 0)) { setAdminError(t('adminBudgetInvalid') || 'Invalid budget'); return; }
+
+  var alertNum = parseInt(alertStr, 10);
+  if (isNaN(alertNum) || alertNum < 0 || alertNum > 100) alertNum = 80;
+
+  var { error } = await window.supabase
+    .from('projects')
+    .update({ budget_amount: budget, budget_alert_pct: alertNum })
+    .eq('id', pid);
+  if (error) { setAdminError(error.message); return; }
+  // Note: refreshAdminProjectList rebuilds inputs from scratch, so any concurrent
+  // admin typing in another row will be lost. Acceptable for typical 1-admin teams.
+  refreshAdminProjectList();
+  toast(t('adminBudgetSaved'));
+  // Realtime channel will trigger debouncedRefetchSummary() automatically.
+}
+window.adminSaveBudget = adminSaveBudget;
 
 async function refreshAdminUserList() {
   var { data: users, error } = await window.supabase
