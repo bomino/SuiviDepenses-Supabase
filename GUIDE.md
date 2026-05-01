@@ -9,11 +9,11 @@ Ce guide s'adresse aux **utilisateurs finaux** : administrateurs (chefs de proje
 ## Sommaire
 
 1. [Présentation](#1-présentation)
-2. [Premiers pas — créer un compte et se connecter](#2-premiers-pas--créer-un-compte-et-se-connecter)
+2. [Premiers pas — recevoir une invitation et se connecter](#2-premiers-pas--recevoir-une-invitation-et-se-connecter)
 3. [Pour les superviseurs](#3-pour-les-superviseurs)
 4. [Pour les administrateurs](#4-pour-les-administrateurs)
 5. [Reçus et photos](#5-reçus-et-photos)
-6. [Synchronisation en temps réel](#6-synchronisation-en-temps-réel)
+6. [Synchronisation en temps réel et travail hors-ligne](#6-synchronisation-en-temps-réel-et-travail-hors-ligne)
 7. [Installer l'application sur votre téléphone](#7-installer-lapplication-sur-votre-téléphone)
 8. [Trucs et astuces](#8-trucs-et-astuces)
 9. [Dépannage](#9-dépannage)
@@ -29,10 +29,10 @@ Saisir, classer et suivre toutes les dépenses d'un ou plusieurs chantiers — m
 
 | Rôle | Ce qu'ils peuvent faire |
 |---|---|
-| **Admin** (chef de projet) | Voir **toutes** les dépenses de **tous les projets**. Créer/renommer/supprimer des projets. Affecter chaque utilisateur à un projet. Promouvoir/rétrograder les autres admins. Modifier ou supprimer n'importe quelle dépense. |
-| **Superviseur** (par défaut) | Voir uniquement les dépenses qu'il a saisies, **sur le projet auquel il est affecté**. Ajouter, modifier, supprimer ses propres dépenses. Joindre une photo de reçu à chaque dépense. |
+| **Admin** (chef de projet) | Voir **toutes** les dépenses de **tous les projets**. Créer/renommer/supprimer des projets. **Définir un budget par projet**. **Inviter et supprimer des utilisateurs**. Affecter chaque utilisateur à un projet. Promouvoir/rétrograder les autres admins. Modifier ou supprimer n'importe quelle dépense. |
+| **Superviseur** (par défaut) | Voir uniquement les dépenses qu'il a saisies, **sur le projet auquel il est affecté**. Ajouter, modifier, supprimer ses propres dépenses. Joindre une photo de reçu à chaque dépense. **Travailler hors-ligne** ; ses saisies se synchronisent à la reconnexion. |
 
-**Multi-projet** — une seule installation peut suivre plusieurs chantiers en parallèle (ex. « Villa Tower », « Rénovation 14e »). Les superviseurs ne voient que leur chantier ; l'admin voit tout, en temps réel.
+**Multi-projet** — une seule installation peut suivre plusieurs chantiers en parallèle (ex. « Villa Tower », « Rénovation 14e »). Les superviseurs ne voient que leur chantier ; l'admin voit tout, en temps réel, avec un **suivi du budget** par projet.
 
 ---
 
@@ -57,7 +57,7 @@ L'accès à l'application est **sur invitation uniquement**. Vous ne pouvez pas 
 
 ### 2.3 Mot de passe oublié
 
-Sur l'écran de connexion, cliquez sur **Mot de passe oublié ?** → saisissez votre e-mail → vous recevez un lien pour définir un nouveau mot de passe.
+Sur l'écran de connexion, cliquez sur **Mot de passe oublié ?** → saisissez votre e-mail → vous recevez un lien. En cliquant dessus, vous arrivez sur un écran **« Définir un nouveau mot de passe »** : saisissez le nouveau mot de passe, validez, vous êtes connecté(e).
 
 ---
 
@@ -68,9 +68,9 @@ Sur l'écran de connexion, cliquez sur **Mot de passe oublié ?** → saisissez 
 Une fois connecté(e), vous voyez :
 
 - **En-tête** : titre **Suivi des Dépenses**, le nom du chantier auquel vous êtes affecté(e), une pastille **En ligne** (vert), et les boutons **FR/EN**, **Exporter**, **Tout effacer**, **Déconnexion**.
-- **Tableau de bord** : 4 cartes — Total, Payé, Impayé, Attente.
+- **Tableau de bord** : 5 cartes — Total, Payé, Impayé, Attente, et **Budget** (visible si votre admin a défini un budget pour le projet ; voir §4.4).
 - **Formulaire** « Ajouter une dépense ».
-- **Liste** des dépenses avec barre de filtres.
+- **Liste** des dépenses avec barre de filtres et une colonne **Sync** indiquant les saisies en attente de synchronisation.
 
 ### 3.2 Ajouter une dépense
 
@@ -110,23 +110,51 @@ Le bouton **Gérer les utilisateurs** apparaît dans l'en-tête. Le panneau cont
 
 ### 4.1 Gérer les projets
 
+Pour chaque projet, vous pouvez :
+
 - **Ajouter** : saisissez un nom unique → **Ajouter un projet**.
-- **Renommer** : bouton **Renommer** à côté du projet.
+- **Définir un budget** : saisissez un montant et un seuil d'alerte (% — par défaut 80) → **Enregistrer**. Voir §4.4.
+- **Renommer** : bouton **Renommer**.
 - **Supprimer** : bouton **Supprimer** (rouge).
 
 > ⚠️ Supprimer un projet **efface toutes ses dépenses et leurs reçus**, et **désaffecte les superviseurs** qui y étaient (ils restent inscrits mais voient « Aucun projet affecté »).
 
-### 4.2 Gérer les utilisateurs
+### 4.2 Inviter un utilisateur
 
-Contrairement à la version Tier 2, vous **n'ajoutez pas** les utilisateurs vous-même : ils s'inscrivent sur l'écran de connexion. Vous, en tant qu'admin, vous :
+Dans la section **Utilisateurs** :
 
-- **Affectez chaque utilisateur à un projet** via le menu déroulant à côté de son nom.
-- **Promouvez ou rétrogradez** les autres admins via le bouton **Promouvoir admin** / **Rétrograder**.
-- *(Pas de bouton supprimer en panneau pour l'instant — la suppression d'un compte se fait depuis le tableau Supabase Auth, pour respecter la séparation des préoccupations.)*
+1. Saisissez l'e-mail de la personne dans le champ **user@example.com**.
+2. Cliquez sur **Inviter**.
+3. La personne reçoit un e-mail avec un lien magique. En cliquant dessus, elle arrive sur l'application, choisit son mot de passe (§2.1), et se retrouve dans votre liste d'utilisateurs.
+4. Pour les superviseurs, **affectez-les à un projet** via le menu déroulant à côté de leur ligne. Sans projet, ils ne peuvent pas saisir de dépense.
 
-> Auto-protection : vous **ne pouvez pas** vous rétrograder vous-même.
+> 📌 **Étiquette « En attente »** — un utilisateur invité mais qui ne s'est jamais connecté apparaît avec une pastille orange « En attente ». Une fois qu'il s'est connecté, l'étiquette disparaît.
 
-### 4.3 Renommer le projet en cours
+> 📌 **Limite d'envoi** — Supabase limite par défaut les e-mails d'invitation à environ 3 par heure (offre gratuite). Si vous invitez beaucoup d'utilisateurs, demandez à votre admin technique de configurer un fournisseur SMTP personnalisé (Resend, etc.).
+
+### 4.3 Gérer les utilisateurs existants
+
+Pour chaque ligne d'utilisateur, vous pouvez :
+
+- **Affecter à un projet** via le menu déroulant.
+- **Promouvoir admin** ou **Rétrograder** via le bouton correspondant.
+- **Supprimer** (bouton rouge) — supprime définitivement l'utilisateur, **toutes ses dépenses et tous ses reçus**. Une confirmation est demandée.
+
+> 🛡️ **Auto-protection** : vous **ne pouvez pas** vous rétrograder ni vous supprimer vous-même. Le bouton est désactivé sur votre propre ligne.
+
+### 4.4 Suivre les budgets de projet
+
+Dès qu'un budget est défini (§4.1), une **carte « Budget »** apparaît dans le tableau de bord pour tous les utilisateurs affectés à ce projet.
+
+- **Vert** : moins de 80% du budget consommé (seuil ajustable).
+- **Orange** : entre 80% et 100% du budget — alerte de proximité.
+- **Rouge** + libellé **« Dépassement »** : budget dépassé.
+
+Les saisies des **autres superviseurs sur le même projet** sont incluses dans le total — chacun voit le vrai total partagé, pas seulement ses propres saisies. Toute modification de budget (par l'admin) ou nouvelle dépense (par n'importe qui) met à jour la carte en temps réel sans recharger la page.
+
+> 💡 Le budget est **informatif**, pas bloquant. Une dépense au-delà du budget est enregistrée normalement — c'est volontaire (les chantiers réels dépassent parfois leur budget et il faut quand même tout tracer).
+
+### 4.5 Renommer le projet en cours
 
 Cliquez sur le nom du chantier dans l'en-tête (à côté du crayon). C'est un raccourci pour renommer le projet auquel **vous-même** êtes affecté(e).
 
@@ -134,7 +162,7 @@ Cliquez sur le nom du chantier dans l'en-tête (à côté du crayon). C'est un r
 
 ## 5. Reçus et photos
 
-L'une des grosses nouveautés de cette version : chaque dépense peut avoir **une photo de reçu** attachée.
+Chaque dépense peut avoir **une photo de reçu** attachée.
 
 ### Ajouter un reçu lors de la saisie
 
@@ -155,19 +183,15 @@ Chaque superviseur ne peut voir que **ses propres reçus**. Les admins peuvent t
 
 ---
 
-## 6. Synchronisation en temps réel
+## 6. Synchronisation en temps réel et travail hors-ligne
+
+### 6.1 En temps réel
 
 Quand un autre membre de l'équipe saisit, modifie ou supprime une dépense visible pour vous, **votre liste se met à jour automatiquement** sans rechargement.
 
-Ça marche pour :
-- Les superviseurs voient les dépenses qu'ils saisissent depuis un autre appareil (utile si vous saisissez en double sur téléphone et tablette).
-- Les admins voient en temps réel les dépenses entrées par chaque superviseur de chaque chantier.
+Idem pour les changements de budget, le renommage de projet, et l'arrivée/départ d'utilisateurs dans le panneau d'administration.
 
-Pas besoin d'actualiser. Si la connexion réseau est rompue, les modifications faites pendant la coupure apparaissent à la reconnexion.
-
----
-
-## 6.bis Travailler hors-ligne
+### 6.2 Hors-ligne
 
 L'application enregistre vos dépenses même sans connexion. Quand vous êtes hors réseau (sous-sol, ascenseur, zone blanche) :
 
@@ -178,11 +202,13 @@ L'application enregistre vos dépenses même sans connexion. Quand vous êtes ho
 
 La carte **Budget** affiche un cadre en pointillés tant que des saisies sont en attente : c'est un total approximatif (vos changements locaux + dernière valeur connue du serveur). Une fois la synchronisation faite, le cadre redevient plein.
 
+> 💡 Vous pouvez fermer l'onglet (ou même redémarrer le téléphone) avec des saisies en attente — elles sont sauvegardées localement et seront envoyées dès la prochaine connexion.
+
 ---
 
 ## 7. Installer l'application sur votre téléphone
 
-L'application est une **PWA** : installable comme une application native, fonctionne hors-ligne pour la consultation.
+L'application est une **PWA** : installable comme une application native, fonctionne hors-ligne pour la consultation et la saisie.
 
 ### Sur Android (Chrome / Edge)
 
@@ -206,7 +232,7 @@ L'application est une **PWA** : installable comme une application native, foncti
 
 ### 8.1 Mises à jour
 
-Quand votre administrateur déploie une nouvelle version, vous recevrez la nouvelle interface à la prochaine ouverture. Si vous voulez forcer immédiatement : ouvrez les paramètres de votre navigateur → **Effacer les données du site** → rechargez.
+Quand votre administrateur déploie une nouvelle version, vous recevez la nouvelle interface à la prochaine ouverture (le cache du navigateur est invalidé automatiquement à chaque déploiement). Si vous voulez forcer immédiatement : ouvrez les paramètres de votre navigateur → **Effacer les données du site** → rechargez.
 
 ### 8.2 Catégories disponibles
 
@@ -238,12 +264,15 @@ Cliquez sur **Exporter** au moins une fois par semaine pour conserver une copie 
 | Problème | Cause probable | Solution |
 |---|---|---|
 | « Configuration manquante » sur l'écran de connexion | L'admin n'a pas saisi l'URL/clé Supabase dans `index.html` | Voir [`SETUP.md`](./SETUP.md) §5. |
-| « Identifiants invalides » à la connexion | Faute de frappe, ou mot de passe oublié | Bouton **Mot de passe oublié ?** ou onglet **Lien magique**. |
-| Lien magique reçu mais ne fonctionne pas | Vous l'ouvrez sur un autre appareil que celui où vous l'avez demandé | Ré-envoyez et ouvrez sur le même appareil. |
-| « Aucun projet affecté » bloque la saisie | L'admin ne vous a pas affecté(e) à un chantier | Contactez l'admin (§4.2). |
-| Photo de reçu refusée | > 5 Mo, ou format non accepté | Compresser la photo (la plupart des téléphones ont une option « réduire la taille » dans l'écran de partage), ou prendre une nouvelle photo en qualité moyenne. |
-| Pastille **Hors ligne** alors que vous avez du réseau | Déconnexion temporaire de Supabase | Patientez quelques secondes ; rechargez la page si ça persiste. |
-| Mes saisies n'apparaissent pas chez l'admin en temps réel | Le canal Realtime n'est pas actif | Rechargez la page. Si ça persiste, l'admin doit vérifier que la migration #1 a bien activé Realtime sur la table `expenses` (voir [`SETUP.md`](./SETUP.md)). |
+| Pas reçu l'e-mail d'invitation | Spam, ou limite d'envoi atteinte (3/h) | Vérifier le spam ; demander à l'admin de relancer plus tard. |
+| Lien d'invitation amène sur une page 404 | URL de site mal configurée côté Supabase | Demander à l'admin de vérifier **Auth → URL Configuration** (voir [`SETUP.md`](./SETUP.md) §4). |
+| « Identifiants invalides » à la connexion | Faute de frappe, ou mot de passe oublié | Cliquez sur **Mot de passe oublié ?**. |
+| « Aucun projet affecté » bloque la saisie | L'admin ne vous a pas affecté(e) à un chantier | Contactez l'admin (§4.3). |
+| Photo de reçu refusée | > 5 Mo, ou format non accepté | Compresser la photo, ou prendre une nouvelle photo en qualité moyenne. |
+| Pastille **Hors ligne** alors que vous avez du réseau | Déconnexion temporaire de Supabase | Patientez ; rechargez la page si ça persiste. |
+| Mes saisies n'apparaissent pas chez l'admin en temps réel | Le canal Realtime n'est pas actif | Rechargez la page. Si ça persiste, l'admin doit vérifier les migrations (voir [`SETUP.md`](./SETUP.md)). |
+| Saisie en attente avec ⚠️ | Saisie rejetée par le serveur (RLS, projet retiré, etc.) | Cliquer **Réessayer** ou **Supprimer** sur la ligne concernée. |
+| La carte Budget ne montre pas le bon total | Cache local décalé | Rechargez la page ; le total se recalcule via la base. |
 | Je vois des dépenses qui ne sont pas les miennes (en tant que superviseur) | Vous êtes admin sans le savoir | L'admin peut vérifier votre rôle dans **Gérer les utilisateurs**. |
 
 Bonne gestion de chantier ! 🏗️
